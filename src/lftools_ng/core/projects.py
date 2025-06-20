@@ -5,10 +5,14 @@
 
 import logging
 import pathlib
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
 import yaml
+
+# Import GitHub discovery
+from lftools_ng.core.github_discovery import GitHubDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,7 @@ class ProjectManager:
         self.config_dir = config_dir
         self.projects_file = config_dir / "projects.yaml"
         self.servers_file = config_dir / "servers.yaml"
+        self.repositories_file = config_dir / "repositories.yaml"  # New repositories file
 
         # Ensure config directory exists
         self.config_dir.mkdir(parents=True, exist_ok=True)
@@ -52,7 +57,12 @@ class ProjectManager:
         try:
             with open(self.projects_file) as f:
                 data = yaml.safe_load(f)
-                return data.get("projects", [])
+                if data is None:
+                    return []
+                projects = data.get("projects", [])
+                if not isinstance(projects, list):
+                    return []
+                return projects
         except Exception as e:
             logger.error(f"Failed to load projects: {e}")
             return []
@@ -70,7 +80,11 @@ class ProjectManager:
         try:
             with open(self.servers_file) as f:
                 data = yaml.safe_load(f)
+                if data is None:
+                    return []
                 servers = data.get("servers", [])
+                if not isinstance(servers, list):
+                    return []
 
                 # Load projects for mapping
                 projects = self.list_projects()
@@ -89,6 +103,76 @@ class ProjectManager:
             logger.error(f"Failed to load servers: {e}")
             return []
 
+    def list_repositories(self, project: Optional[str] = None, include_archived: bool = False) -> Dict[str, Any]:
+        """List repositories for projects.
+
+        Args:
+            project: Optional project name to filter by
+            include_archived: Whether to include archived repositories
+
+        Returns:
+            Dictionary with repositories list and metadata
+        """
+        if not self.repositories_file.exists():
+            logger.warning(f"Repositories file not found: {self.repositories_file}")
+            return {"repositories": [], "total": 0, "active": 0, "archived": 0}
+
+        try:
+            with open(self.repositories_file) as f:
+                data = yaml.safe_load(f)
+                if data is None:
+                    return {"repositories": [], "total": 0, "active": 0, "archived": 0}
+
+                repositories = data.get("repositories", [])
+                if not isinstance(repositories, list):
+                    return {"repositories": [], "total": 0, "active": 0, "archived": 0}
+
+                # Filter by project if specified
+                if project:
+                    repositories = [repo for repo in repositories if repo.get("project", "").lower() == project.lower()]
+
+                # Filter archived if not requested
+                if not include_archived:
+                    repositories = [repo for repo in repositories if not repo.get("archived", False)]
+
+                # Calculate statistics
+                total = len(data.get("repositories", []))
+                active = len([repo for repo in data.get("repositories", []) if not repo.get("archived", False)])
+                archived = total - active
+
+                return {
+                    "repositories": repositories,
+                    "total": total,
+                    "active": active,
+                    "archived": archived
+                }
+        except Exception as e:
+            logger.error(f"Failed to load repositories: {e}")
+            return {"repositories": [], "total": 0, "active": 0, "archived": 0}
+
+    def get_repository_info(self, project: str, repository: str) -> Optional[Dict[str, Any]]:
+        """Get detailed information about a specific repository.
+
+        Args:
+            project: Project name
+            repository: Repository name (either Gerrit path or GitHub name)
+
+        Returns:
+            Repository information if found, None otherwise
+        """
+        repositories_data = self.list_repositories(include_archived=True)
+
+        for repo in repositories_data["repositories"]:
+            if repo.get("project", "").lower() != project.lower():
+                continue
+
+            # Match either by Gerrit path or GitHub name
+            if (repo.get("gerrit_path") == repository or
+                repo.get("github_name") == repository):
+                return dict(repo)
+
+        return None
+
     def add_project(self, project_data: Dict[str, Any]) -> None:
         """Add a new project.
 
@@ -99,13 +183,22 @@ class ProjectManager:
 
         # Check for duplicate project names or aliases
         existing_names = {p.get("name") for p in projects}
-        existing_aliases = {p.get("alias") for p in projects}
+        # Collect all existing aliases from all projects
+        existing_aliases = set()
+        for p in projects:
+            aliases = p.get("aliases", [])
+            if isinstance(aliases, list):
+                existing_aliases.update(aliases)
 
         if project_data.get("name") in existing_names:
             raise ValueError(f"Project name '{project_data['name']}' already exists")
 
-        if project_data.get("alias") in existing_aliases:
-            raise ValueError(f"Project alias '{project_data['alias']}' already exists")
+        # Check if any of the new project's aliases conflict with existing ones
+        new_aliases = project_data.get("aliases", [])
+        if isinstance(new_aliases, list):
+            for alias in new_aliases:
+                if alias in existing_aliases:
+                    raise ValueError(f"Project alias '{alias}' already exists")
 
         # Add status and timestamp
         project_data["status"] = "active"
@@ -180,6 +273,10 @@ class ProjectManager:
 
                 # Extract projects
                 projects = self._extract_projects_from_config(config_data)
+
+                # Enhance projects with GitHub discovery
+                self._enhance_projects_with_github_discovery(projects)
+
                 servers = self._extract_servers_from_projects(projects)
 
                 # Save to files
@@ -352,12 +449,12 @@ class ProjectManager:
                     return
 
             # Fallback to legacy pattern matching with accessibility testing
-            inferred_url = self._infer_url_from_server_name(server_name, server_type)
-            if inferred_url and self._test_url_accessibility(inferred_url):
-                server["url"] = inferred_url
-                logger.info(f"Successfully inferred and tested URL for {server_name}: {inferred_url}")
-            elif inferred_url:
-                logger.debug(f"Inferred URL {inferred_url} for {server_name} is not accessible")
+            fallback_url: Optional[str] = self._infer_url_from_server_name(server_name, server_type)
+            if fallback_url is not None and self._test_url_accessibility(fallback_url):
+                server["url"] = fallback_url
+                logger.info(f"Successfully inferred and tested URL for {server_name}: {fallback_url}")
+            elif fallback_url is not None:
+                logger.debug(f"Inferred URL {fallback_url} for {server_name} is not accessible")
 
     def _fix_opnfv_anuket_linking(self, server: Dict[str, Any]) -> None:
         """Fix OPNFV/Anuket server linking issue."""
@@ -707,8 +804,7 @@ class ProjectManager:
             }
         }
 
-        with open(self.projects_file, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        self._save_yaml_with_header(data, self.projects_file)
 
     def _save_servers(self, servers: List[Dict[str, Any]]) -> None:
         """Save servers to file."""
@@ -720,13 +816,23 @@ class ProjectManager:
             }
         }
 
-        with open(self.servers_file, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        self._save_yaml_with_header(data, self.servers_file)
 
     def _current_timestamp(self) -> str:
         """Get current timestamp as ISO string."""
         from datetime import datetime
         return datetime.now().isoformat()
+
+    def _save_yaml_with_header(self, data: Dict[str, Any], file_path: pathlib.Path) -> None:
+        """Save YAML data with proper SPDX header and document start marker."""
+        header = """# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+---
+"""
+        with open(file_path, "w") as f:
+            f.write(header)
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     def _test_url_accessibility(self, url: str) -> bool:
         """Test if a URL is accessible and returns a valid response.
@@ -1034,3 +1140,159 @@ class ProjectManager:
             return project_urls.get(server_type, [])
 
         return []
+
+    def _enhance_projects_with_github_discovery(self, projects: List[Dict[str, Any]]) -> None:
+        """Enhance projects with GitHub organization discovery and repository enumeration.
+
+        Args:
+            projects: List of project dictionaries to enhance
+        """
+        from lftools_ng.core.github_discovery import GitHubDiscovery
+
+        logger.info("Enhancing projects with GitHub discovery...")
+        discovered_count = 0
+        repositories = []
+
+        with GitHubDiscovery() as github_discovery:
+            for project in projects:
+                proj_name = project.get("name", "")
+                existing_org = project.get("github_mirror_org")
+
+                if existing_org:
+                    logger.info(f"Project {proj_name} already has GitHub org: {existing_org}")
+                else:
+                    # Discover GitHub organization
+                    logger.info(f"Discovering GitHub org for: {proj_name}")
+                    discovered_org = github_discovery.discover_github_organization(project)
+
+                    if discovered_org:
+                        project["github_mirror_org"] = discovered_org
+                        discovered_count += 1
+                        logger.info(f"Found GitHub org for {proj_name}: {discovered_org}")
+
+                # Discover repositories for this project
+                project_repos = self._discover_project_repositories(project, github_discovery)
+                repositories.extend(project_repos)
+
+        # Save discovered repositories
+        if repositories:
+            self._save_repositories(repositories)
+            logger.info(f"Saved {len(repositories)} repositories for {len(projects)} projects")
+
+        logger.info(f"GitHub discovery enhanced {discovered_count} projects with new organizations")
+
+    def _discover_project_repositories(self, project: Dict[str, Any], github_discovery: Any) -> List[Dict[str, Any]]:
+        """Discover repositories for a specific project.
+
+        Args:
+            project: Project data dictionary
+            github_discovery: GitHub discovery instance
+
+        Returns:
+            List of repository dictionaries
+        """
+        repositories = []
+        proj_name = project.get("name", "")
+        github_org = project.get("github_mirror_org")
+
+        # Discover repositories from GitHub if we have an organization
+        if github_org:
+            github_repos = self._discover_github_repositories(github_org, proj_name, github_discovery)
+            repositories.extend(github_repos)
+
+        # Add Gerrit repositories if we have Gerrit URL
+        gerrit_url = project.get("gerrit_url")
+        if gerrit_url:
+            gerrit_repos = self._discover_gerrit_repositories(gerrit_url, proj_name)
+            repositories.extend(gerrit_repos)
+
+        return repositories
+
+    def _discover_github_repositories(self, github_org: str, project_name: str, github_discovery: Any) -> List[Dict[str, Any]]:
+        """Discover repositories from GitHub organization.
+
+        Args:
+            github_org: GitHub organization name
+            project_name: Project name
+            github_discovery: GitHub discovery instance
+
+        Returns:
+            List of repository dictionaries
+        """
+        repositories = []
+
+        try:
+            # Get repositories from GitHub API
+            response = github_discovery.client.get(f"https://api.github.com/orgs/{github_org}/repos")
+            if response.status_code == 200:
+                github_repos = response.json()
+
+                for repo in github_repos:
+                    repo_data = {
+                        "project": project_name,
+                        "github_name": repo.get("name", ""),
+                        "description": repo.get("description", ""),
+                        "archived": repo.get("archived", False),
+                        "gerrit_path": self._map_github_to_gerrit_path(repo.get("name", "")),
+                        "created": datetime.now().isoformat(),
+                        "updated": datetime.now().isoformat(),
+                    }
+                    repositories.append(repo_data)
+
+        except Exception as e:
+            logger.warning(f"Failed to discover GitHub repositories for {github_org}: {e}")
+
+        return repositories
+
+    def _discover_gerrit_repositories(self, gerrit_url: str, project_name: str) -> List[Dict[str, Any]]:
+        """Discover repositories from Gerrit.
+
+        Args:
+            gerrit_url: Gerrit server URL
+            project_name: Project name
+
+        Returns:
+            List of repository dictionaries
+        """
+        repositories: List[Dict[str, Any]] = []
+
+        try:
+            # This would need actual Gerrit API implementation
+            # For now, we'll create placeholder entries based on common patterns
+            logger.info(f"Gerrit repository discovery for {gerrit_url} (project: {project_name}) not yet implemented")
+
+        except Exception as e:
+            logger.warning(f"Failed to discover Gerrit repositories for {gerrit_url}: {e}")
+
+        return repositories
+
+    def _map_github_to_gerrit_path(self, github_name: str) -> Optional[str]:
+        """Map GitHub repository name to likely Gerrit path.
+
+        Args:
+            github_name: GitHub repository name
+
+        Returns:
+            Likely Gerrit path or None if no mapping can be determined
+        """
+        # Replace hyphens with slashes for common patterns
+        # e.g., "it-dep-l2" -> "it/dep/l2"
+        if "-" in github_name:
+            # Simple heuristic: replace hyphens with slashes
+            return github_name.replace("-", "/")
+
+        return None
+
+    def _save_repositories(self, repositories: List[Dict[str, Any]]) -> None:
+        """Save repositories to the repositories file.
+
+        Args:
+            repositories: List of repository dictionaries
+        """
+        try:
+            repositories_data = {"repositories": repositories}
+            self._save_yaml_with_header(repositories_data, self.repositories_file)
+            logger.info(f"Saved {len(repositories)} repositories to {self.repositories_file}")
+
+        except Exception as e:
+            logger.error(f"Failed to save repositories: {e}")

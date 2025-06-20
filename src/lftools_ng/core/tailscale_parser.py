@@ -81,7 +81,11 @@ class TailscaleParser:
                 logger.warning(f"Tailscale status command failed: {result.stderr}")
                 return {}
 
-            return json.loads(result.stdout)
+            status_data = json.loads(result.stdout)
+            if not isinstance(status_data, dict):
+                logger.warning("Tailscale status command returned non-dict data")
+                return {}
+            return status_data
 
         except subprocess.TimeoutExpired:
             logger.warning("Tailscale status command timed out")

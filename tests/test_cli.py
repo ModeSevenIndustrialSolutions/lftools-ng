@@ -49,12 +49,19 @@ class TestCLI:
         mock_client.get_credentials.return_value = []
         mock_jenkins_client_class.return_value = mock_client
 
-        result = self.runner.invoke(app, [
-            "jenkins", "credentials",
-            "--server", "https://jenkins.example.org",
-            "--user", "testuser",
-            "--password", "testpass"
-        ])
+        result = self.runner.invoke(
+            app,
+            [
+                "jenkins",
+                "credentials",
+                "--server",
+                "https://jenkins.example.org",
+                "--user",
+                "testuser",
+                "--password",
+                "testpass",
+            ],
+        )
         assert result.exit_code == 0
 
     def test_cli_version_flag(self) -> None:
