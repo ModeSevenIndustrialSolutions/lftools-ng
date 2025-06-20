@@ -1,0 +1,48 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+# Updates Python dependencies and raise a pull request
+name: "Update Python Dependencies ♻️"
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 1 * *"
+  push:
+    branches:
+      - "main"
+      - "master"
+    paths:
+      - "**"
+      - "!.github/**"
+      - "!.*"
+      - "!pdm.lock"
+      - "!Pipfile.lock"
+      - "!tox.ini"
+
+permissions: {}
+
+jobs:
+  python-dependencies:
+    name: "Update Python Dependencies"
+    runs-on: "ubuntu-24.04"
+    permissions:
+      # IMPORTANT: mandatory to raise the PR
+      id-token: write
+      pull-requests: write
+      repository-projects: write
+      contents: write
+    timeout-minutes: 10
+    steps:
+      # Harden the runner used by this workflow
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+        with:
+          egress-policy: audit
+
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/python-dependencies-update-action@3b2b40361716c4f940eaf6876aa9e4841c58b146 # v0.1.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

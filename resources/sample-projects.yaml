@@ -1,0 +1,75 @@
+# Sample Projects Database
+# This file contains initial project data for lftools-ng
+
+projects:
+  - name: "Anuket"
+    primary_name: "Anuket"
+    aliases: ["OPNFV", "anuket", "opnfv"]
+    previous_names: ["OPNFV"]
+    gerrit_url: "https://gerrit.opnfv.org"
+    github_mirror_org: "opnfv"
+    jenkins_production: null
+    jenkins_sandbox: null
+    nexus_url: null
+    nexus3_url: null
+    wiki_url: "https://wiki.anuket.io"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.anuket.io"
+    issue_tracking_url: "https://jira.opnfv.org"
+    issue_tracking_type: "jira"
+    sonar_url: null
+    logs_url: null
+
+  - name: "ONAP"
+    primary_name: "ONAP"
+    aliases: ["ONAP", "onap", "ECOMP"]
+    previous_names: ["ECOMP"]
+    gerrit_url: "https://gerrit.onap.org"
+    github_mirror_org: "onap"
+    jenkins_production: "https://jenkins.onap.org"
+    jenkins_sandbox: "https://jenkins.onap.org/sandbox"
+    nexus_url: "https://nexus.onap.org"
+    nexus3_url: "https://nexus3.onap.org"
+    wiki_url: "https://wiki.onap.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.onap.org"
+    issue_tracking_url: "https://jira.onap.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/onap/projects"
+    logs_url: "https://logs.onap.org"
+
+  - name: "OpenDaylight"
+    primary_name: "OpenDaylight"
+    aliases: ["OpenDaylight", "ODL", "opendaylight", "odl"]
+    previous_names: []
+    gerrit_url: "https://git.opendaylight.org/gerrit"
+    github_mirror_org: "opendaylight"
+    jenkins_production: "https://jenkins.opendaylight.org/releng"
+    jenkins_sandbox: "https://jenkins.opendaylight.org/sandbox"
+    nexus_url: "https://nexus.opendaylight.org"
+    nexus3_url: "https://nexus3.opendaylight.org"
+    wiki_url: "https://wiki.opendaylight.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.opendaylight.org"
+    issue_tracking_url: "https://jira.opendaylight.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/opendaylight/projects"
+    logs_url: "https://logs.opendaylight.org"
+
+  - name: "O-RAN-SC"
+    primary_name: "O-RAN Software Community"
+    aliases: ["O-RAN", "ORAN", "O-RAN-SC", "o-ran-sc"]
+    previous_names: []
+    gerrit_url: "https://gerrit.o-ran-sc.org"
+    github_mirror_org: "o-ran-sc"
+    jenkins_production: "https://jenkins.o-ran-sc.org"
+    jenkins_sandbox: "https://jenkins.o-ran-sc.org/sandbox"
+    nexus_url: "https://nexus.o-ran-sc.org"
+    nexus3_url: "https://nexus3.o-ran-sc.org"
+    wiki_url: "https://wiki.o-ran-sc.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.o-ran-sc.org"
+    issue_tracking_url: "https://jira.o-ran-sc.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/o-ran-sc/projects"
+    logs_url: "https://logs.o-ran-sc.org"

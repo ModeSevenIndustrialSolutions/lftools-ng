@@ -1,0 +1,83 @@
+# Sample Servers Database
+# This file contains initial server data for lftools-ng
+
+servers:
+  - name: "jenkins.onap.org"
+    url: "https://jenkins.onap.org"
+    type: "jenkins"
+    vpn_address: "100.64.1.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["ONAP"]
+
+  - name: "jenkins.onap.org/sandbox"
+    url: "https://jenkins.onap.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.1.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["ONAP"]
+
+  - name: "gerrit.onap.org"
+    url: "https://gerrit.onap.org"
+    type: "gerrit"
+    vpn_address: "100.64.1.20"
+    location: "vexxhost"
+    github_mirror_org: "onap"
+    is_production: true
+    version: "3.6.2"
+    projects: ["ONAP"]
+
+  - name: "nexus3.onap.org"
+    url: "https://nexus3.onap.org"
+    type: "nexus3"
+    vpn_address: "100.64.1.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["ONAP"]
+
+  - name: "jenkins.opendaylight.org"
+    url: "https://jenkins.opendaylight.org/releng"
+    type: "jenkins"
+    vpn_address: "100.64.2.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["OpenDaylight"]
+
+  - name: "git.opendaylight.org"
+    url: "https://git.opendaylight.org/gerrit"
+    type: "gerrit"
+    vpn_address: "100.64.2.20"
+    location: "vexxhost"
+    github_mirror_org: "opendaylight"
+    is_production: true
+    version: "3.6.2"
+    projects: ["OpenDaylight"]
+
+  - name: "jenkins.o-ran-sc.org"
+    url: "https://jenkins.o-ran-sc.org"
+    type: "jenkins"
+    vpn_address: "100.64.3.10"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["O-RAN-SC"]
+
+  - name: "gerrit.o-ran-sc.org"
+    url: "https://gerrit.o-ran-sc.org"
+    type: "gerrit"
+    vpn_address: "100.64.3.20"
+    location: "aws"
+    github_mirror_org: "o-ran-sc"
+    is_production: true
+    version: "3.6.2"
+    projects: ["O-RAN-SC"]
