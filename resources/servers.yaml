@@ -2,10 +2,11 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 ---
-# Sample Servers Database
-# This file contains initial server data for lftools-ng
+# Linux Foundation Servers Database
+# This file contains comprehensive server data for all major Linux Foundation infrastructure
 
 servers:
+  # ONAP Infrastructure
   - name: "jenkins.onap.org"
     url: "https://jenkins.onap.org"
     type: "jenkins"
@@ -46,6 +47,7 @@ servers:
     version: "3.37.3"
     projects: ["ONAP"]
 
+  # OpenDaylight Infrastructure
   - name: "jenkins.opendaylight.org"
     url: "https://jenkins.opendaylight.org/releng"
     type: "jenkins"
@@ -53,6 +55,16 @@ servers:
     location: "vexxhost"
     github_mirror_org: null
     is_production: true
+    version: "2.414.1"
+    projects: ["OpenDaylight"]
+
+  - name: "jenkins.opendaylight.org/sandbox"
+    url: "https://jenkins.opendaylight.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.2.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
     version: "2.414.1"
     projects: ["OpenDaylight"]
 
@@ -66,6 +78,17 @@ servers:
     version: "3.6.2"
     projects: ["OpenDaylight"]
 
+  - name: "nexus3.opendaylight.org"
+    url: "https://nexus3.opendaylight.org"
+    type: "nexus3"
+    vpn_address: "100.64.2.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["OpenDaylight"]
+
+  # O-RAN-SC Infrastructure
   - name: "jenkins.o-ran-sc.org"
     url: "https://jenkins.o-ran-sc.org"
     type: "jenkins"
@@ -73,6 +96,16 @@ servers:
     location: "aws"
     github_mirror_org: null
     is_production: true
+    version: "2.414.1"
+    projects: ["O-RAN-SC"]
+
+  - name: "jenkins.o-ran-sc.org/sandbox"
+    url: "https://jenkins.o-ran-sc.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.3.11"
+    location: "aws"
+    github_mirror_org: null
+    is_production: false
     version: "2.414.1"
     projects: ["O-RAN-SC"]
 
@@ -85,3 +118,425 @@ servers:
     is_production: true
     version: "3.6.2"
     projects: ["O-RAN-SC"]
+
+  - name: "nexus3.o-ran-sc.org"
+    url: "https://nexus3.o-ran-sc.org"
+    type: "nexus3"
+    vpn_address: "100.64.3.30"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["O-RAN-SC"]
+
+  # FD.io Infrastructure
+  - name: "jenkins.fd.io"
+    url: "https://jenkins.fd.io"
+    type: "jenkins"
+    vpn_address: "100.64.4.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["FD.io"]
+
+  - name: "jenkins.fd.io/sandbox"
+    url: "https://jenkins.fd.io/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.4.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["FD.io"]
+
+  - name: "gerrit.fd.io"
+    url: "https://gerrit.fd.io"
+    type: "gerrit"
+    vpn_address: "100.64.4.20"
+    location: "vexxhost"
+    github_mirror_org: "FDio"
+    is_production: true
+    version: "3.6.2"
+    projects: ["FD.io"]
+
+  - name: "nexus.fd.io"
+    url: "https://nexus.fd.io"
+    type: "nexus3"
+    vpn_address: "100.64.4.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["FD.io"]
+
+  # Anuket (OPNFV) Infrastructure
+  - name: "build.opnfv.org"
+    url: "https://build.opnfv.org"
+    type: "jenkins"
+    vpn_address: "100.64.5.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["Anuket"]
+
+  - name: "build.opnfv.org/sandbox"
+    url: "https://build.opnfv.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.5.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["Anuket"]
+
+  - name: "gerrit.opnfv.org"
+    url: "https://gerrit.opnfv.org"
+    type: "gerrit"
+    vpn_address: "100.64.5.20"
+    location: "vexxhost"
+    github_mirror_org: "opnfv"
+    is_production: true
+    version: "3.6.2"
+    projects: ["Anuket"]
+
+  - name: "nexus3.opnfv.org"
+    url: "https://nexus3.opnfv.org"
+    type: "nexus3"
+    vpn_address: "100.64.5.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["Anuket"]
+
+  # EdgeX Foundry Infrastructure
+  - name: "jenkins.edgexfoundry.org"
+    url: "https://jenkins.edgexfoundry.org"
+    type: "jenkins"
+    vpn_address: "100.64.6.10"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["EdgeX Foundry"]
+
+  - name: "jenkins.edgexfoundry.org/sandbox"
+    url: "https://jenkins.edgexfoundry.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.6.11"
+    location: "aws"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["EdgeX Foundry"]
+
+  - name: "nexus3.edgexfoundry.org"
+    url: "https://nexus3.edgexfoundry.org"
+    type: "nexus3"
+    vpn_address: "100.64.6.30"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["EdgeX Foundry"]
+
+  # Akraino Infrastructure
+  - name: "jenkins.akraino.org"
+    url: "https://jenkins.akraino.org"
+    type: "jenkins"
+    vpn_address: "100.64.7.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["Akraino"]
+
+  - name: "jenkins.akraino.org/sandbox"
+    url: "https://jenkins.akraino.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.7.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["Akraino"]
+
+  - name: "gerrit.akraino.org"
+    url: "https://gerrit.akraino.org"
+    type: "gerrit"
+    vpn_address: "100.64.7.20"
+    location: "vexxhost"
+    github_mirror_org: "akraino-edge-stack"
+    is_production: true
+    version: "3.6.2"
+    projects: ["Akraino"]
+
+  - name: "nexus3.akraino.org"
+    url: "https://nexus3.akraino.org"
+    type: "nexus3"
+    vpn_address: "100.64.7.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["Akraino"]
+
+  # CORD Infrastructure
+  - name: "jenkins.opencord.org"
+    url: "https://jenkins.opencord.org"
+    type: "jenkins"
+    vpn_address: "100.64.8.10"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["CORD"]
+
+  - name: "jenkins.opencord.org/sandbox"
+    url: "https://jenkins.opencord.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.8.11"
+    location: "aws"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["CORD"]
+
+  - name: "gerrit.opencord.org"
+    url: "https://gerrit.opencord.org"
+    type: "gerrit"
+    vpn_address: "100.64.8.20"
+    location: "aws"
+    github_mirror_org: "opencord"
+    is_production: true
+    version: "3.6.2"
+    projects: ["CORD"]
+
+  - name: "nexus3.opencord.org"
+    url: "https://nexus3.opencord.org"
+    type: "nexus3"
+    vpn_address: "100.64.8.30"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["CORD"]
+
+  # Automotive Grade Linux Infrastructure
+  - name: "build.automotivelinux.org"
+    url: "https://build.automotivelinux.org"
+    type: "jenkins"
+    vpn_address: "100.64.9.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["Automotive Grade Linux"]
+
+  - name: "build.automotivelinux.org/sandbox"
+    url: "https://build.automotivelinux.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.9.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["Automotive Grade Linux"]
+
+  - name: "gerrit.automotivelinux.org"
+    url: "https://gerrit.automotivelinux.org"
+    type: "gerrit"
+    vpn_address: "100.64.9.20"
+    location: "vexxhost"
+    github_mirror_org: "automotive-grade-linux"
+    is_production: true
+    version: "3.6.2"
+    projects: ["Automotive Grade Linux"]
+
+  - name: "nexus3.automotivelinux.org"
+    url: "https://nexus3.automotivelinux.org"
+    type: "nexus3"
+    vpn_address: "100.64.9.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["Automotive Grade Linux"]
+
+  # Yocto Project Infrastructure
+  - name: "autobuilder.yoctoproject.org"
+    url: "https://autobuilder.yoctoproject.org"
+    type: "jenkins"
+    vpn_address: "100.64.10.10"
+    location: "yocto"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["Yocto Project"]
+
+  - name: "autobuilder.yoctoproject.org/typhoon"
+    url: "https://autobuilder.yoctoproject.org/typhoon"
+    type: "jenkins"
+    vpn_address: "100.64.10.11"
+    location: "yocto"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["Yocto Project"]
+
+  # Civil Infrastructure Platform Infrastructure
+  - name: "gitlab.com/cip-project"
+    url: "https://gitlab.com/cip-project"
+    type: "gitlab"
+    vpn_address: null
+    location: "gitlab-saas"
+    github_mirror_org: null
+    is_production: true
+    version: "gitlab-ee"
+    projects: ["Civil Infrastructure Platform"]
+
+  - name: "gerrit.cip-project.org"
+    url: "https://gerrit.cip-project.org"
+    type: "gerrit"
+    vpn_address: "100.64.11.20"
+    location: "cip"
+    github_mirror_org: "cip-project"
+    is_production: true
+    version: "3.6.2"
+    projects: ["Civil Infrastructure Platform"]
+
+  # Linux Foundation Networking Infrastructure
+  - name: "jenkins.linuxfoundation.org"
+    url: "https://jenkins.linuxfoundation.org"
+    type: "jenkins"
+    vpn_address: "100.64.12.10"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["Linux Foundation Networking"]
+
+  - name: "jenkins.linuxfoundation.org/sandbox"
+    url: "https://jenkins.linuxfoundation.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.12.11"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["Linux Foundation Networking"]
+
+  - name: "gerrit.linuxfoundation.org"
+    url: "https://gerrit.linuxfoundation.org"
+    type: "gerrit"
+    vpn_address: "100.64.12.20"
+    location: "vexxhost"
+    github_mirror_org: "lf-networking"
+    is_production: true
+    version: "3.6.2"
+    projects: ["Linux Foundation Networking"]
+
+  - name: "nexus3.linuxfoundation.org"
+    url: "https://nexus3.linuxfoundation.org"
+    type: "nexus3"
+    vpn_address: "100.64.12.30"
+    location: "vexxhost"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["Linux Foundation Networking"]
+
+  # CNCF Infrastructure
+  - name: "prow.k8s.io"
+    url: "https://prow.k8s.io"
+    type: "prow"
+    vpn_address: null
+    location: "gcp"
+    github_mirror_org: null
+    is_production: true
+    version: "prow"
+    projects: ["CNCF"]
+
+  # Hyperledger Infrastructure
+  - name: "jenkins.hyperledger.org"
+    url: "https://jenkins.hyperledger.org"
+    type: "jenkins"
+    vpn_address: "100.64.13.10"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["Hyperledger"]
+
+  - name: "jenkins.hyperledger.org/sandbox"
+    url: "https://jenkins.hyperledger.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.13.11"
+    location: "aws"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["Hyperledger"]
+
+  - name: "gerrit.hyperledger.org"
+    url: "https://gerrit.hyperledger.org"
+    type: "gerrit"
+    vpn_address: "100.64.13.20"
+    location: "aws"
+    github_mirror_org: "hyperledger"
+    is_production: true
+    version: "3.6.2"
+    projects: ["Hyperledger"]
+
+  - name: "nexus3.hyperledger.org"
+    url: "https://nexus3.hyperledger.org"
+    type: "nexus3"
+    vpn_address: "100.64.13.30"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["Hyperledger"]
+
+  # LF Energy Infrastructure
+  - name: "jenkins.lfenergy.org"
+    url: "https://jenkins.lfenergy.org"
+    type: "jenkins"
+    vpn_address: "100.64.14.10"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "2.414.1"
+    projects: ["LF Energy"]
+
+  - name: "jenkins.lfenergy.org/sandbox"
+    url: "https://jenkins.lfenergy.org/sandbox"
+    type: "jenkins"
+    vpn_address: "100.64.14.11"
+    location: "aws"
+    github_mirror_org: null
+    is_production: false
+    version: "2.414.1"
+    projects: ["LF Energy"]
+
+  - name: "gerrit.lfenergy.org"
+    url: "https://gerrit.lfenergy.org"
+    type: "gerrit"
+    vpn_address: "100.64.14.20"
+    location: "aws"
+    github_mirror_org: "lf-energy"
+    is_production: true
+    version: "3.6.2"
+    projects: ["LF Energy"]
+
+  - name: "nexus3.lfenergy.org"
+    url: "https://nexus3.lfenergy.org"
+    type: "nexus3"
+    vpn_address: "100.64.14.30"
+    location: "aws"
+    github_mirror_org: null
+    is_production: true
+    version: "3.37.3"
+    projects: ["LF Energy"]

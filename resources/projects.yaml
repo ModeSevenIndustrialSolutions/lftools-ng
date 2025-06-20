@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 ---
-# Sample Projects Database
-# This file contains initial project data for lftools-ng
+# Linux Foundation Projects Database
+# This file contains comprehensive project data for all major Linux Foundation projects
 
 projects:
   - name: "Anuket"
@@ -12,17 +12,17 @@ projects:
     previous_names: ["OPNFV"]
     gerrit_url: "https://gerrit.opnfv.org"
     github_mirror_org: "opnfv"
-    jenkins_production: null
-    jenkins_sandbox: null
-    nexus_url: null
-    nexus3_url: null
+    jenkins_production: "https://build.opnfv.org"
+    jenkins_sandbox: "https://build.opnfv.org/sandbox"
+    nexus_url: "https://nexus.opnfv.org"
+    nexus3_url: "https://nexus3.opnfv.org"
     wiki_url: "https://wiki.anuket.io"
     wiki_type: "mediawiki"
     docs_url: "https://docs.anuket.io"
     issue_tracking_url: "https://jira.opnfv.org"
     issue_tracking_type: "jira"
-    sonar_url: null
-    logs_url: null
+    sonar_url: "https://sonarcloud.io/organizations/opnfv/projects"
+    logs_url: "https://logs.opnfv.org"
 
   - name: "ONAP"
     primary_name: "ONAP"
@@ -77,3 +77,201 @@ projects:
     issue_tracking_type: "jira"
     sonar_url: "https://sonarcloud.io/organizations/o-ran-sc/projects"
     logs_url: "https://logs.o-ran-sc.org"
+
+  - name: "FD.io"
+    primary_name: "FD.io"
+    aliases: ["FD.io", "fdio", "fd-io", "vpp"]
+    previous_names: []
+    gerrit_url: "https://gerrit.fd.io"
+    github_mirror_org: "FDio"
+    jenkins_production: "https://jenkins.fd.io"
+    jenkins_sandbox: "https://jenkins.fd.io/sandbox"
+    nexus_url: "https://nexus.fd.io"
+    nexus3_url: "https://nexus3.fd.io"
+    wiki_url: "https://wiki.fd.io"
+    wiki_type: "confluence"
+    docs_url: "https://docs.fd.io"
+    issue_tracking_url: "https://jira.fd.io"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/fdio/projects"
+    logs_url: "https://logs.fd.io"
+
+  - name: "EdgeX Foundry"
+    primary_name: "EdgeX Foundry"
+    aliases: ["EdgeX", "edgex", "edgex-foundry", "edgexfoundry"]
+    previous_names: []
+    gerrit_url: null
+    github_mirror_org: "edgexfoundry"
+    jenkins_production: "https://jenkins.edgexfoundry.org"
+    jenkins_sandbox: "https://jenkins.edgexfoundry.org/sandbox"
+    nexus_url: "https://nexus.edgexfoundry.org"
+    nexus3_url: "https://nexus3.edgexfoundry.org"
+    wiki_url: "https://wiki.edgexfoundry.org"
+    wiki_type: "confluence"
+    docs_url: "https://docs.edgexfoundry.org"
+    issue_tracking_url: "https://github.com/edgexfoundry/edgex-go/issues"
+    issue_tracking_type: "github"
+    sonar_url: "https://sonarcloud.io/organizations/edgexfoundry/projects"
+    logs_url: "https://logs.edgexfoundry.org"
+
+  - name: "Akraino"
+    primary_name: "Akraino Edge Stack"
+    aliases: ["Akraino", "akraino", "akraino-edge-stack"]
+    previous_names: []
+    gerrit_url: "https://gerrit.akraino.org"
+    github_mirror_org: "akraino-edge-stack"
+    jenkins_production: "https://jenkins.akraino.org"
+    jenkins_sandbox: "https://jenkins.akraino.org/sandbox"
+    nexus_url: "https://nexus.akraino.org"
+    nexus3_url: "https://nexus3.akraino.org"
+    wiki_url: "https://wiki.akraino.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.akraino.org"
+    issue_tracking_url: "https://jira.akraino.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/akraino/projects"
+    logs_url: "https://logs.akraino.org"
+
+  - name: "CORD"
+    primary_name: "Central Office Re-architected as a Datacenter"
+    aliases: ["CORD", "cord", "opencord", "open-cord"]
+    previous_names: []
+    gerrit_url: "https://gerrit.opencord.org"
+    github_mirror_org: "opencord"
+    jenkins_production: "https://jenkins.opencord.org"
+    jenkins_sandbox: "https://jenkins.opencord.org/sandbox"
+    nexus_url: "https://nexus.opencord.org"
+    nexus3_url: "https://nexus3.opencord.org"
+    wiki_url: "https://wiki.opencord.org"
+    wiki_type: "confluence"
+    docs_url: "https://docs.opencord.org"
+    issue_tracking_url: "https://jira.opencord.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/opencord/projects"
+    logs_url: "https://logs.opencord.org"
+
+  - name: "Automotive Grade Linux"
+    primary_name: "Automotive Grade Linux"
+    aliases: ["AGL", "agl", "automotive-grade-linux", "automotivelinux"]
+    previous_names: []
+    gerrit_url: "https://gerrit.automotivelinux.org"
+    github_mirror_org: "automotive-grade-linux"
+    jenkins_production: "https://build.automotivelinux.org"
+    jenkins_sandbox: "https://build.automotivelinux.org/sandbox"
+    nexus_url: "https://nexus.automotivelinux.org"
+    nexus3_url: "https://nexus3.automotivelinux.org"
+    wiki_url: "https://wiki.automotivelinux.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.automotivelinux.org"
+    issue_tracking_url: "https://jira.automotivelinux.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/automotive-grade-linux/projects"
+    logs_url: "https://logs.automotivelinux.org"
+
+  - name: "Yocto Project"
+    primary_name: "Yocto Project"
+    aliases: ["Yocto", "yocto", "yocto-project"]
+    previous_names: []
+    gerrit_url: null
+    github_mirror_org: "yoctoproject"
+    jenkins_production: "https://autobuilder.yoctoproject.org"
+    jenkins_sandbox: "https://autobuilder.yoctoproject.org/typhoon"
+    nexus_url: null
+    nexus3_url: null
+    wiki_url: "https://wiki.yoctoproject.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.yoctoproject.org"
+    issue_tracking_url: "https://bugzilla.yoctoproject.org"
+    issue_tracking_type: "bugzilla"
+    sonar_url: null
+    logs_url: "https://autobuilder.yoctoproject.org/pub"
+
+  - name: "Civil Infrastructure Platform"
+    primary_name: "Civil Infrastructure Platform"
+    aliases: ["CIP", "cip", "civil-infrastructure-platform"]
+    previous_names: []
+    gerrit_url: "https://gerrit.cip-project.org"
+    github_mirror_org: "cip-project"
+    jenkins_production: "https://gitlab.com/cip-project"
+    jenkins_sandbox: null
+    nexus_url: null
+    nexus3_url: null
+    wiki_url: "https://wiki.cip-project.org"
+    wiki_type: "mediawiki"
+    docs_url: "https://docs.cip-project.org"
+    issue_tracking_url: "https://gitlab.com/cip-project/cip-kernel/kernelci-project/-/issues"
+    issue_tracking_type: "gitlab"
+    sonar_url: null
+    logs_url: null
+
+  - name: "Linux Foundation Networking"
+    primary_name: "Linux Foundation Networking"
+    aliases: ["LFN", "lfn", "lf-networking", "linux-foundation-networking"]
+    previous_names: []
+    gerrit_url: "https://gerrit.linuxfoundation.org"
+    github_mirror_org: "lf-networking"
+    jenkins_production: "https://jenkins.linuxfoundation.org"
+    jenkins_sandbox: "https://jenkins.linuxfoundation.org/sandbox"
+    nexus_url: "https://nexus.linuxfoundation.org"
+    nexus3_url: "https://nexus3.linuxfoundation.org"
+    wiki_url: "https://wiki.linuxfoundation.org"
+    wiki_type: "confluence"
+    docs_url: "https://docs.linuxfoundation.org"
+    issue_tracking_url: "https://jira.linuxfoundation.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/lf-networking/projects"
+    logs_url: "https://logs.linuxfoundation.org"
+
+  - name: "CNCF"
+    primary_name: "Cloud Native Computing Foundation"
+    aliases: ["CNCF", "cncf", "cloud-native-computing-foundation", "kubernetes"]
+    previous_names: []
+    gerrit_url: null
+    github_mirror_org: "cncf"
+    jenkins_production: "https://prow.k8s.io"
+    jenkins_sandbox: "https://prow.k8s.io"
+    nexus_url: null
+    nexus3_url: null
+    wiki_url: "https://github.com/cncf/toc"
+    wiki_type: "github"
+    docs_url: "https://www.cncf.io"
+    issue_tracking_url: "https://github.com/cncf/toc/issues"
+    issue_tracking_type: "github"
+    sonar_url: "https://sonarcloud.io/organizations/cncf/projects"
+    logs_url: "https://prow.k8s.io"
+
+  - name: "Hyperledger"
+    primary_name: "Hyperledger"
+    aliases: ["Hyperledger", "hyperledger", "hyperledger-foundation"]
+    previous_names: []
+    gerrit_url: "https://gerrit.hyperledger.org"
+    github_mirror_org: "hyperledger"
+    jenkins_production: "https://jenkins.hyperledger.org"
+    jenkins_sandbox: "https://jenkins.hyperledger.org/sandbox"
+    nexus_url: "https://nexus.hyperledger.org"
+    nexus3_url: "https://nexus3.hyperledger.org"
+    wiki_url: "https://wiki.hyperledger.org"
+    wiki_type: "confluence"
+    docs_url: "https://hyperledger.github.io"
+    issue_tracking_url: "https://jira.hyperledger.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/hyperledger/projects"
+    logs_url: "https://logs.hyperledger.org"
+
+  - name: "LF Energy"
+    primary_name: "LF Energy"
+    aliases: ["LFE", "lfe", "lf-energy", "lfenergy"]
+    previous_names: []
+    gerrit_url: "https://gerrit.lfenergy.org"
+    github_mirror_org: "lf-energy"
+    jenkins_production: "https://jenkins.lfenergy.org"
+    jenkins_sandbox: "https://jenkins.lfenergy.org/sandbox"
+    nexus_url: "https://nexus.lfenergy.org"
+    nexus3_url: "https://nexus3.lfenergy.org"
+    wiki_url: "https://wiki.lfenergy.org"
+    wiki_type: "confluence"
+    docs_url: "https://docs.lfenergy.org"
+    issue_tracking_url: "https://jira.lfenergy.org"
+    issue_tracking_type: "jira"
+    sonar_url: "https://sonarcloud.io/organizations/lf-energy/projects"
+    logs_url: "https://logs.lfenergy.org"
