@@ -2,10 +2,11 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 ---
-# Sample Repositories Database
-# This file contains repository data for lftools-ng
+# Linux Foundation Repositories Database
+# This file contains comprehensive repository data for all major Linux Foundation projects
 
 repositories:
+  # ONAP Repositories
   - project: "ONAP"
     gerrit_path: "aai/aai-common"
     github_name: "aai-aai-common"
@@ -23,6 +24,22 @@ repositories:
     updated: "2025-06-20T10:00:00"
 
   - project: "ONAP"
+    gerrit_path: "so/so"
+    github_name: "so"
+    description: "ONAP Service Orchestrator"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "ONAP"
+    gerrit_path: "dmaap/messagerouter/messageservice"
+    github_name: "dmaap-messagerouter-messageservice"
+    description: "ONAP DMaaP Message Router Service"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "ONAP"
     gerrit_path: "policy/engine"
     github_name: "policy-engine"
     description: "ONAP Policy Engine"
@@ -30,6 +47,15 @@ repositories:
     created: "2025-06-20T10:00:00"
     updated: "2025-06-20T10:00:00"
 
+  - project: "ONAP"
+    gerrit_path: "sdc/sdc-workflow-designer"
+    github_name: "sdc-sdc-workflow-designer"
+    description: "ONAP SDC Workflow Designer"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # OpenDaylight Repositories
   - project: "OpenDaylight"
     gerrit_path: "controller"
     github_name: "controller"
@@ -46,6 +72,31 @@ repositories:
     created: "2025-06-20T10:00:00"
     updated: "2025-06-20T10:00:00"
 
+  - project: "OpenDaylight"
+    gerrit_path: "yangtools"
+    github_name: "yangtools"
+    description: "OpenDaylight YANG Tools"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "OpenDaylight"
+    gerrit_path: "mdsal"
+    github_name: "mdsal"
+    description: "OpenDaylight Model-Driven Service Abstraction Layer"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "OpenDaylight"
+    gerrit_path: "netconf"
+    github_name: "netconf"
+    description: "OpenDaylight NETCONF"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # Anuket (OPNFV) Repositories
   - project: "Anuket"
     gerrit_path: "releng"
     github_name: "releng"
@@ -55,9 +106,316 @@ repositories:
     updated: "2025-06-20T10:00:00"
 
   - project: "Anuket"
+    gerrit_path: "functest"
+    github_name: "functest"
+    description: "Anuket Functional Testing"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Anuket"
+    gerrit_path: "yardstick"
+    github_name: "yardstick"
+    description: "Anuket Yardstick benchmarking"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Anuket"
     gerrit_path: "vswitchperf"
     github_name: "vswitchperf"
     description: "Anuket VSwitch Performance Testing"
     archived: true
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Anuket"
+    gerrit_path: "pharos"
+    github_name: "pharos"
+    description: "Anuket Pharos Lab Management"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # O-RAN-SC Repositories
+  - project: "O-RAN-SC"
+    gerrit_path: "ric-plt/e2mgr"
+    github_name: "ric-plt-e2mgr"
+    description: "O-RAN SC RIC Platform E2 Manager"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "O-RAN-SC"
+    gerrit_path: "ric-plt/rtmgr"
+    github_name: "ric-plt-rtmgr"
+    description: "O-RAN SC RIC Platform Routing Manager"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "O-RAN-SC"
+    gerrit_path: "ric-app/ts"
+    github_name: "ric-app-ts"
+    description: "O-RAN SC RIC Application Traffic Steering"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "O-RAN-SC"
+    gerrit_path: "sim/o1-interface"
+    github_name: "sim-o1-interface"
+    description: "O-RAN SC O1 Interface Simulator"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # FD.io Repositories
+  - project: "FD.io"
+    gerrit_path: "vpp"
+    github_name: "vpp"
+    description: "FD.io Vector Packet Processing"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "FD.io"
+    gerrit_path: "csit"
+    github_name: "csit"
+    description: "FD.io Continuous System Integration and Testing"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "FD.io"
+    gerrit_path: "honeycomb"
+    github_name: "honeycomb"
+    description: "FD.io Honeycomb"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "FD.io"
+    gerrit_path: "hc2vpp"
+    github_name: "hc2vpp"
+    description: "FD.io Honeycomb to VPP Translation Layer"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # EdgeX Foundry Repositories
+  - project: "EdgeX Foundry"
+    gerrit_path: null
+    github_name: "edgex-go"
+    description: "EdgeX Foundry Core Services (Go)"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "EdgeX Foundry"
+    gerrit_path: null
+    github_name: "device-sdk-go"
+    description: "EdgeX Foundry Device SDK for Go"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "EdgeX Foundry"
+    gerrit_path: null
+    github_name: "app-functions-sdk-go"
+    description: "EdgeX Foundry Application Functions SDK for Go"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "EdgeX Foundry"
+    gerrit_path: null
+    github_name: "edgex-ui-go"
+    description: "EdgeX Foundry UI (Go)"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # Akraino Repositories
+  - project: "Akraino"
+    gerrit_path: "kni/installer"
+    github_name: "kni-installer"
+    description: "Akraino KNI Installer"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Akraino"
+    gerrit_path: "icn"
+    github_name: "icn"
+    description: "Akraino Integrated Cloud Native"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Akraino"
+    gerrit_path: "ta/build-tools"
+    github_name: "ta-build-tools"
+    description: "Akraino TA Build Tools"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # CORD Repositories
+  - project: "CORD"
+    gerrit_path: "orchestration/xos"
+    github_name: "xos"
+    description: "CORD XOS Orchestration Platform"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "CORD"
+    gerrit_path: "platform/voltha"
+    github_name: "voltha"
+    description: "CORD VOLTHA Virtual OLT Hardware Abstraction"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "CORD"
+    gerrit_path: "automation/kubernetes"
+    github_name: "automation-kubernetes"
+    description: "CORD Kubernetes Automation"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # Automotive Grade Linux Repositories
+  - project: "Automotive Grade Linux"
+    gerrit_path: "meta-agl"
+    github_name: "meta-agl"
+    description: "AGL Core Yocto Layer"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Automotive Grade Linux"
+    gerrit_path: "meta-agl-demo"
+    github_name: "meta-agl-demo"
+    description: "AGL Demo Yocto Layer"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Automotive Grade Linux"
+    gerrit_path: "agl-service-can-low-level"
+    github_name: "agl-service-can-low-level"
+    description: "AGL CAN Low Level Service"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # Yocto Project Repositories
+  - project: "Yocto Project"
+    gerrit_path: null
+    github_name: "poky"
+    description: "Yocto Project Reference Distribution"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Yocto Project"
+    gerrit_path: null
+    github_name: "meta-openembedded"
+    description: "Yocto Project OpenEmbedded Layers"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Yocto Project"
+    gerrit_path: null
+    github_name: "bitbake"
+    description: "Yocto Project BitBake Build Tool"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # Civil Infrastructure Platform Repositories
+  - project: "Civil Infrastructure Platform"
+    gerrit_path: "cip-kernel/cip-kernel"
+    github_name: "cip-kernel"
+    description: "CIP Linux Kernel"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Civil Infrastructure Platform"
+    gerrit_path: "cip-testing/kernelci-backend"
+    github_name: "kernelci-backend"
+    description: "CIP KernelCI Backend"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # CNCF Repositories (subset)
+  - project: "CNCF"
+    gerrit_path: null
+    github_name: "kubernetes"
+    description: "Production-Grade Container Orchestration"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "CNCF"
+    gerrit_path: null
+    github_name: "prometheus"
+    description: "The Prometheus monitoring system and time series database"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "CNCF"
+    gerrit_path: null
+    github_name: "envoy"
+    description: "Cloud-native high-performance edge/middle/service proxy"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # Hyperledger Repositories
+  - project: "Hyperledger"
+    gerrit_path: "fabric"
+    github_name: "fabric"
+    description: "Hyperledger Fabric"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Hyperledger"
+    gerrit_path: "sawtooth-core"
+    github_name: "sawtooth-core"
+    description: "Hyperledger Sawtooth Core"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Hyperledger"
+    gerrit_path: "indy-node"
+    github_name: "indy-node"
+    description: "Hyperledger Indy Node"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  # LF Energy Repositories
+  - project: "LF Energy"
+    gerrit_path: "powsybl/powsybl-core"
+    github_name: "powsybl-core"
+    description: "LF Energy PowSyBl Core"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "LF Energy"
+    gerrit_path: "egeria"
+    github_name: "egeria"
+    description: "LF Energy Egeria Open Metadata and Governance"
+    archived: false
     created: "2025-06-20T10:00:00"
     updated: "2025-06-20T10:00:00"

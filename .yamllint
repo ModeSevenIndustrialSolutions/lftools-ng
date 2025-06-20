@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+---
+# yamllint configuration file
+# This configuration allows for 120 character line lengths while maintaining
+# other YAML linting best practices
+
+extends: default
+
+rules:
+  # Allow 120 character line lengths
+  line-length:
+    max: 120
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: false
+
+  # Allow reasonable indentation patterns
+  indentation:
+    spaces: 2
+    indent-sequences: true
+    check-multi-line-strings: false
+
+  # Be more permissive with comments
+  comments:
+    min-spaces-from-content: 1
+    require-starting-space: true
+
+  # Allow empty values for optional fields
+  empty-values:
+    forbid-in-block-mappings: false
+    forbid-in-flow-mappings: false
+
+  # Allow reasonable document start practices
+  document-start:
+    present: true
+
+  # Don't require document end
+  document-end:
+    present: false
+
+  # Allow trailing spaces in comments (common in generated files)
+  trailing-spaces: enable
+
+  # Allow reasonable truthy values
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no']

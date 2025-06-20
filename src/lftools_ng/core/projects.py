@@ -5,6 +5,7 @@
 
 import logging
 import pathlib
+import shutil
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -43,6 +44,42 @@ class ProjectManager:
 
         # Ensure config directory exists
         self.config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Auto-initialize configuration from resources if needed
+        self._auto_initialize_config()
+
+    def _auto_initialize_config(self) -> None:
+        """Auto-initialize configuration from resources directory if config files don't exist."""
+        try:
+            # Find the resources directory relative to this file
+            current_file = pathlib.Path(__file__)
+            # Navigate up from src/lftools_ng/core/projects.py to project root
+            project_root = current_file.parent.parent.parent.parent
+            resources_dir = project_root / "resources"
+
+            if not resources_dir.exists():
+                logger.warning(f"Resources directory not found: {resources_dir}")
+                return
+
+            files_to_copy = [
+                ("projects.yaml", self.projects_file),
+                ("servers.yaml", self.servers_file),
+                ("repositories.yaml", self.repositories_file)
+            ]
+
+            copied_files = []
+            for resource_file, config_file in files_to_copy:
+                resource_path = resources_dir / resource_file
+                if resource_path.exists() and not config_file.exists():
+                    shutil.copy2(resource_path, config_file)
+                    copied_files.append(resource_file)
+                    logger.info(f"Initialized {config_file} from resources")
+
+            if copied_files:
+                logger.info(f"Auto-initialized configuration with Linux Foundation data: {', '.join(copied_files)}")
+
+        except Exception as e:
+            logger.warning(f"Failed to auto-initialize configuration: {e}")
 
     def list_projects(self) -> List[Dict[str, Any]]:
         """List all registered projects.
