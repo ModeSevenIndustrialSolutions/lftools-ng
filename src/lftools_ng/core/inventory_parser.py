@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from urllib.parse import urlparse
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from lftools_ng.core.models import (
     IssueTrackingType,
@@ -49,7 +49,8 @@ class InventoryParser:
         """
         response = self.client.get(url)
         response.raise_for_status()
-        return response.text
+        content: str = response.text
+        return content
 
     def parse_inventory_table(self, html_content: str) -> List[Dict[str, Any]]:
         """Parse the inventory table from HTML content.
@@ -70,25 +71,26 @@ class InventoryParser:
 
         # The inventory table should be the first/main table
         table = tables[0]
-        rows = table.find_all('tr')
+        # Cast to Tag for proper typing
+        table_tag = cast(Tag, table)
+        rows = table_tag.find_all('tr')
 
         if len(rows) < 2:
             logger.warning("Inventory table has no data rows")
             return []
 
-        # Parse header to understand column structure
-        header_row = rows[0]
-        headers = [th.get_text().strip() for th in header_row.find_all(['th', 'td'])]
-
         projects = []
 
         for row in rows[1:]:  # Skip header row
-            cells = row.find_all(['td', 'th'])
+            # Cast row to Tag for proper typing
+            row_tag = cast(Tag, row)
+            cells = row_tag.find_all(['td', 'th'])
             if len(cells) < 2:
                 continue
 
             # First cell should contain the project name
-            project_name = cells[0].get_text().strip()
+            first_cell = cast(Tag, cells[0])
+            project_name = first_cell.get_text().strip()
             if not project_name or project_name in ['Project', '']:
                 continue
 
@@ -318,7 +320,8 @@ class InventoryParser:
                 extra_info = mapping[2] if len(mapping) > 2 else None
                 is_production = mapping[3] if len(mapping) > 3 else True
 
-                if not url:
+                # Ensure url is a string before processing
+                if not url or not isinstance(url, str):
                     continue
 
                 parsed_url = urlparse(url)
@@ -328,13 +331,23 @@ class InventoryParser:
                     # Add project to existing server
                     seen_servers[server_name].projects.append(project.name)
                 else:
+                    # Ensure server_type is ServerType
+                    if not isinstance(server_type, ServerType):
+                        continue
+
+                    # Ensure extra_info is None or string for github_mirror_org
+                    github_mirror_org = extra_info if isinstance(extra_info, (str, type(None))) else None
+
+                    # Ensure is_production is boolean
+                    is_prod = bool(is_production) if isinstance(is_production, bool) else True
+
                     # Create new server
                     server = Server(
                         name=server_name,
                         url=url,
                         server_type=server_type,
-                        github_mirror_org=extra_info if server_type == ServerType.GERRIT else None,
-                        is_production=is_production,
+                        github_mirror_org=github_mirror_org if server_type == ServerType.GERRIT else None,
+                        is_production=is_prod,
                         location=self._determine_server_location(server_name),
                         projects=[project.name],
                     )
@@ -384,7 +397,7 @@ class InventoryParser:
             return False
 
         try:
-            import requests
+            import requests  # type: ignore[import-untyped]
 
             # Test the URL with a short timeout and simple request
             response = requests.head(url, timeout=5, allow_redirects=True)

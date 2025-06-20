@@ -36,11 +36,7 @@ class TestProjectCommands:
         """Test listing projects with data."""
         mock_manager = Mock()
         mock_manager.list_projects.return_value = [
-            {
-                "name": "test-project",
-                "alias": "tp",
-                "jenkins_server": "jenkins.example.org"
-            }
+            {"name": "test-project", "alias": "tp", "jenkins_server": "jenkins.example.org"}
         ]
         mock_project_manager_class.return_value = mock_manager
 
@@ -73,7 +69,7 @@ class TestProjectCommands:
                 "name": "jenkins-prod",
                 "type": "jenkins",
                 "url": "https://jenkins.example.org/",
-                "project_count": 5
+                "project_count": 5,
             }
         ]
         mock_project_manager_class.return_value = mock_manager
@@ -91,12 +87,17 @@ class TestProjectCommands:
         mock_manager.add_project.return_value = True
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, [
-            "add-project",
-            "test-project",
-            "--aliases", "tp",
-            "--jenkins-prod", "https://jenkins.example.org"
-        ])
+        result = self.runner.invoke(
+            projects_app,
+            [
+                "add-project",
+                "test-project",
+                "--aliases",
+                "tp",
+                "--jenkins-prod",
+                "https://jenkins.example.org",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "Successfully added project" in result.output
@@ -106,15 +107,22 @@ class TestProjectCommands:
     def test_add_project_duplicate(self, mock_project_manager_class: Mock) -> None:
         """Test adding a duplicate project."""
         mock_manager = Mock()
-        mock_manager.add_project.side_effect = ValueError("Project name 'test-project' already exists")
+        mock_manager.add_project.side_effect = ValueError(
+            "Project name 'test-project' already exists"
+        )
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, [
-            "add-project",
-            "test-project",
-            "--aliases", "tp",
-            "--jenkins-prod", "https://jenkins.example.org"
-        ])
+        result = self.runner.invoke(
+            projects_app,
+            [
+                "add-project",
+                "test-project",
+                "--aliases",
+                "tp",
+                "--jenkins-prod",
+                "https://jenkins.example.org",
+            ],
+        )
 
         assert result.exit_code == 1
         assert "already exists" in result.output
@@ -126,11 +134,9 @@ class TestProjectCommands:
         mock_manager.add_server.return_value = True
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, [
-            "add-server",
-            "jenkins-prod",
-            "--url", "https://jenkins.example.org/"
-        ])
+        result = self.runner.invoke(
+            projects_app, ["add-server", "jenkins-prod", "--url", "https://jenkins.example.org/"]
+        )
 
         assert result.exit_code == 0
         assert "Successfully added server" in result.output
@@ -140,14 +146,14 @@ class TestProjectCommands:
     def test_add_server_duplicate(self, mock_project_manager_class: Mock) -> None:
         """Test adding a duplicate server."""
         mock_manager = Mock()
-        mock_manager.add_server.side_effect = ValueError("Server name 'jenkins-prod' already exists")
+        mock_manager.add_server.side_effect = ValueError(
+            "Server name 'jenkins-prod' already exists"
+        )
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, [
-            "add-server",
-            "jenkins-prod",
-            "--url", "https://jenkins.example.org/"
-        ])
+        result = self.runner.invoke(
+            projects_app, ["add-server", "jenkins-prod", "--url", "https://jenkins.example.org/"]
+        )
 
         assert result.exit_code == 1
         assert "already exists" in result.output
@@ -158,7 +164,7 @@ class TestProjectCommands:
         mock_manager = Mock()
         mock_manager.rebuild_projects_database.return_value = {
             "projects_count": 10,
-            "servers_count": 3
+            "servers_count": 3,
         }
         mock_project_manager_class.return_value = mock_manager
 
@@ -169,30 +175,32 @@ class TestProjectCommands:
         assert "Servers discovered: 3" in result.output
 
     @patch("lftools_ng.commands.projects.ProjectManager")
-    def test_rebuild_projects_database_with_source_url(self, mock_project_manager_class: Mock) -> None:
+    def test_rebuild_projects_database_with_source_url(
+        self, mock_project_manager_class: Mock
+    ) -> None:
         """Test rebuilding projects database with source URL."""
         mock_manager = Mock()
         mock_manager.rebuild_projects_database.return_value = {
             "projects_count": 5,
-            "servers_count": 2
+            "servers_count": 2,
         }
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, [
-            "rebuild-projects",
-            "--force",
-            "--source", "https://example.com/projects.yaml"
-        ])
+        result = self.runner.invoke(
+            projects_app,
+            ["rebuild-projects", "--force", "--source", "https://example.com/projects.yaml"],
+        )
 
         assert result.exit_code == 0
         assert "Projects loaded: 5" in result.output
         mock_manager.rebuild_projects_database.assert_called_once_with(
-            source_url="https://example.com/projects.yaml",
-            force=True
+            source_url="https://example.com/projects.yaml", force=True
         )
 
     @patch("lftools_ng.commands.projects.ProjectManager")
-    def test_rebuild_projects_database_exists_no_force(self, mock_project_manager_class: Mock) -> None:
+    def test_rebuild_projects_database_exists_no_force(
+        self, mock_project_manager_class: Mock
+    ) -> None:
         """Test rebuilding projects database when it exists without force."""
         mock_manager = Mock()
         mock_manager.rebuild_projects_database.side_effect = ValueError(
@@ -209,9 +217,7 @@ class TestProjectCommands:
     def test_rebuild_servers_database_success(self, mock_project_manager_class: Mock) -> None:
         """Test rebuilding servers database successfully."""
         mock_manager = Mock()
-        mock_manager.rebuild_servers_database.return_value = {
-            "servers_count": 5
-        }
+        mock_manager.rebuild_servers_database.return_value = {"servers_count": 5}
         mock_project_manager_class.return_value = mock_manager
 
         result = self.runner.invoke(projects_app, ["rebuild-servers", "--force"])

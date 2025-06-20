@@ -3,9 +3,10 @@
 
 """Jenkins commands for lftools-ng."""
 
-from typing import Optional
+from typing import Any
 
 import typer
+import yaml
 from rich.console import Console
 
 from lftools_ng.core.jenkins import JenkinsClient
@@ -16,6 +17,20 @@ jenkins_app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+# Constants
+OUTPUT_FORMAT_HELP = "Output format (table, json, json-pretty)"
+
+def format_output(data: Any, output_format: str) -> None:
+    """Format and print output in the specified format."""
+    if output_format == "json":
+        import json
+        console.print(json.dumps(data, separators=(',', ':')))
+    elif output_format == "json-pretty":
+        import json
+        console.print(json.dumps(data, indent=2))
+    elif output_format == "yaml":
+        console.print(yaml.dump(data, default_flow_style=False))
 
 
 @jenkins_app.command("credentials")

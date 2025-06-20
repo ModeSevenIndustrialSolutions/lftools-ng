@@ -27,12 +27,18 @@ class TestJenkinsCommands:
         ]
         mock_jenkins_client_class.return_value = mock_client
 
-        result = self.runner.invoke(jenkins_app, [
-            "credentials",
-            "--server", "https://jenkins.example.org",
-            "--user", "testuser",
-            "--password", "testpass"
-        ])
+        result = self.runner.invoke(
+            jenkins_app,
+            [
+                "credentials",
+                "--server",
+                "https://jenkins.example.org",
+                "--user",
+                "testuser",
+                "--password",
+                "testpass",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "test-cred" in result.output
@@ -42,12 +48,18 @@ class TestJenkinsCommands:
         """Test getting credentials with connection error."""
         mock_jenkins_client_class.side_effect = Exception("Connection failed")
 
-        result = self.runner.invoke(jenkins_app, [
-            "credentials",
-            "--server", "https://jenkins.example.org",
-            "--user", "testuser",
-            "--password", "testpass"
-        ])
+        result = self.runner.invoke(
+            jenkins_app,
+            [
+                "credentials",
+                "--server",
+                "https://jenkins.example.org",
+                "--user",
+                "testuser",
+                "--password",
+                "testpass",
+            ],
+        )
 
         assert result.exit_code == 1
         assert "Connection failed" in result.output
@@ -56,17 +68,21 @@ class TestJenkinsCommands:
     def test_get_secrets_success(self, mock_jenkins_client_class: Mock) -> None:
         """Test getting secrets successfully."""
         mock_client = Mock()
-        mock_client.get_secrets.return_value = [
-            {"id": "test-secret", "description": "Test Secret"}
-        ]
+        mock_client.get_secrets.return_value = [{"id": "test-secret", "description": "Test Secret"}]
         mock_jenkins_client_class.return_value = mock_client
 
-        result = self.runner.invoke(jenkins_app, [
-            "secrets",
-            "--server", "https://jenkins.example.org",
-            "--user", "testuser",
-            "--password", "testpass"
-        ])
+        result = self.runner.invoke(
+            jenkins_app,
+            [
+                "secrets",
+                "--server",
+                "https://jenkins.example.org",
+                "--user",
+                "testuser",
+                "--password",
+                "testpass",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "test-secret" in result.output
@@ -80,18 +96,26 @@ class TestJenkinsCommands:
         ]
         mock_jenkins_client_class.return_value = mock_client
 
-        result = self.runner.invoke(jenkins_app, [
-            "private-keys",
-            "--server", "https://jenkins.example.org",
-            "--user", "testuser",
-            "--password", "testpass"
-        ])
+        result = self.runner.invoke(
+            jenkins_app,
+            [
+                "private-keys",
+                "--server",
+                "https://jenkins.example.org",
+                "--user",
+                "testuser",
+                "--password",
+                "testpass",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "test-key" in result.output
 
     @patch("lftools_ng.commands.jenkins.JenkinsClient")
-    def test_run_groovy_script_success(self, mock_jenkins_client_class: Mock, tmp_path: Path) -> None:
+    def test_run_groovy_script_success(
+        self, mock_jenkins_client_class: Mock, tmp_path: Path
+    ) -> None:
         """Test running groovy script successfully."""
         mock_client = Mock()
         mock_client.run_groovy_script.return_value = "Script executed successfully"
@@ -101,13 +125,19 @@ class TestJenkinsCommands:
         script_file = tmp_path / "test.groovy"
         script_file.write_text("println 'Hello World'")
 
-        result = self.runner.invoke(jenkins_app, [
-            "groovy",
-            str(script_file),
-            "--server", "https://jenkins.example.org",
-            "--user", "testuser",
-            "--password", "testpass"
-        ])
+        result = self.runner.invoke(
+            jenkins_app,
+            [
+                "groovy",
+                str(script_file),
+                "--server",
+                "https://jenkins.example.org",
+                "--user",
+                "testuser",
+                "--password",
+                "testpass",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "Script executed successfully" in result.output

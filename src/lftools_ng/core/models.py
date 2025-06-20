@@ -173,6 +173,49 @@ class Server:
         )
 
 
+@dataclass
+class Repository:
+    """Represents a repository (Gerrit or GitHub) associated with a project."""
+
+    project: str
+    gerrit_path: Optional[str] = None  # e.g., "it/dep/l2" for Gerrit repositories
+    github_name: Optional[str] = None  # e.g., "it-dep-l2" for GitHub mirror names
+    description: Optional[str] = None
+    archived: bool = False  # Whether the repository is archived/read-only
+
+    # Metadata
+    created: datetime = field(default_factory=datetime.now)
+    updated: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "project": self.project,
+            "gerrit_path": self.gerrit_path,
+            "github_name": self.github_name,
+            "description": self.description,
+            "archived": self.archived,
+            "created": self.created.isoformat(),
+            "updated": self.updated.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Repository:
+        """Create from dictionary."""
+        created = datetime.fromisoformat(data["created"]) if data.get("created") else datetime.now()
+        updated = datetime.fromisoformat(data["updated"]) if data.get("updated") else datetime.now()
+
+        return cls(
+            project=data["project"],
+            gerrit_path=data.get("gerrit_path"),
+            github_name=data.get("github_name"),
+            description=data.get("description"),
+            archived=data.get("archived", False),
+            created=created,
+            updated=updated,
+        )
+
+
 # Constants
 FDIO_PROJECT_KEY = "fd.io"
 

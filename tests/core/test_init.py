@@ -11,8 +11,8 @@ def test_core_imports() -> None:
     from lftools_ng.core import jenkins, projects
 
     # Test that the main classes are available
-    assert hasattr(jenkins, 'JenkinsClient')
-    assert hasattr(projects, 'ProjectManager')
+    assert hasattr(jenkins, "JenkinsClient")
+    assert hasattr(projects, "ProjectManager")
 
 
 def test_core_module_version() -> None:
@@ -45,7 +45,9 @@ def test_getattr_invalid_attribute() -> None:
     """Test that invalid attribute access raises AttributeError."""
     import lftools_ng.core
 
-    with pytest.raises(AttributeError, match="module 'lftools_ng.core' has no attribute 'InvalidClass'"):
+    with pytest.raises(
+        AttributeError, match="module 'lftools_ng.core' has no attribute 'InvalidClass'"
+    ):
         lftools_ng.core.InvalidClass  # type: ignore[attr-defined]
 
 

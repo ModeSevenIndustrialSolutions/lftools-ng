@@ -21,7 +21,7 @@ command-line use and library integration.
 - **Credential Extraction**: Export Jenkins credentials, secrets, and SSH
   private keys
 - **Groovy Script Execution**: Run arbitrary Groovy scripts on Jenkins servers
-- **Multiple Output Formats**: Support for table, JSON, and YAML output
+- **Output Formats**: Support for table, JSON, and YAML output
 - **Extensible Architecture**: Built for easy extension of Jenkins functionality
 
 ### Project Management
@@ -157,6 +157,44 @@ lftools-ng projects rebuild-projects --force
 lftools-ng projects rebuild-servers --force
 ```
 
+### Repository Operations
+
+#### List Repositories
+
+```bash
+# List all active repositories
+lftools-ng projects repositories list
+
+# List repositories for a specific project
+lftools-ng projects repositories list ONAP
+
+# Include archived repositories
+lftools-ng projects repositories list --include-archived
+
+# JSON output
+lftools-ng projects repositories list --format json-pretty
+```
+
+#### Repository Information
+
+```bash
+# Get detailed repository info
+lftools-ng projects repositories info ONAP "aai/aai-common"
+
+# Works with GitHub names too
+lftools-ng projects repositories info ONAP "aai-aai-common"
+```
+
+#### List Archived Repositories
+
+```bash
+# List all archived repositories
+lftools-ng projects repositories archived
+
+# List archived repositories for a specific project
+lftools-ng projects repositories archived ONAP
+```
+
 ### General Commands
 
 #### Version Information
@@ -199,7 +237,7 @@ By default, lftools-ng stores configuration in:
 
 ## Library Usage
 
-lftools-ng can also be used as a Python library:
+lftools-ng also works as a Python library:
 
 ```python
 from lftools_ng import JenkinsClient
@@ -312,7 +350,7 @@ pip install dist/lftools_ng-*.whl
 
 ## License
 
-This project is licensed under the Apache License 2.0. See the
+This project uses the Apache License 2.0. See the
 [LICENSE](LICENSE) file for details.
 
 ## Support

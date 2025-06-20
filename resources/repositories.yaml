@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+---
+# Sample Repositories Database
+# This file contains repository data for lftools-ng
+
+repositories:
+  - project: "ONAP"
+    gerrit_path: "aai/aai-common"
+    github_name: "aai-aai-common"
+    description: "ONAP AAI Common modules"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "ONAP"
+    gerrit_path: "aai/babel"
+    github_name: "aai-babel"
+    description: "ONAP AAI Babel artifact translator"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "ONAP"
+    gerrit_path: "policy/engine"
+    github_name: "policy-engine"
+    description: "ONAP Policy Engine"
+    archived: true
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "OpenDaylight"
+    gerrit_path: "controller"
+    github_name: "controller"
+    description: "OpenDaylight Controller"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "OpenDaylight"
+    gerrit_path: "odlparent"
+    github_name: "odlparent"
+    description: "OpenDaylight Parent"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Anuket"
+    gerrit_path: "releng"
+    github_name: "releng"
+    description: "Anuket Release Engineering"
+    archived: false
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
+
+  - project: "Anuket"
+    gerrit_path: "vswitchperf"
+    github_name: "vswitchperf"
+    description: "Anuket VSwitch Performance Testing"
+    archived: true
+    created: "2025-06-20T10:00:00"
+    updated: "2025-06-20T10:00:00"
