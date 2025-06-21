@@ -29,6 +29,8 @@ class TestCLI:
         result = self.runner.invoke(app, ["--version"])
         assert result.exit_code == 0
         assert "0.1.0" in result.output
+        assert "lftools-ng Information" in result.output
+        assert "Linux Foundation Release Engineering Tools" in result.output
 
     @patch("lftools_ng.commands.projects.ProjectManager")
     def test_projects_subcommand(self, mock_project_manager_class: Mock) -> None:
@@ -68,12 +70,13 @@ class TestCLI:
         """Test that --version flag displays version and exits."""
         result = self.runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "lftools-ng version" in result.stdout
+        assert "lftools-ng Information" in result.stdout
+        assert "0.1.0" in result.stdout
 
     def test_cli_verbose_flag(self) -> None:
         """Test that --verbose flag sets logging level."""
         with patch("logging.basicConfig") as mock_basicConfig:
-            result = self.runner.invoke(app, ["--verbose", "info"])
+            result = self.runner.invoke(app, ["--verbose", "--version"])
             assert result.exit_code == 0
             mock_basicConfig.assert_called_once_with(level=logging.DEBUG)
 
