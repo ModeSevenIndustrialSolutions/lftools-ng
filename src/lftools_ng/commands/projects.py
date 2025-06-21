@@ -4,7 +4,7 @@
 """Enhanced project management commands for lftools-ng."""
 
 import pathlib
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import typer
 import yaml
@@ -36,10 +36,12 @@ def format_output(data: Any, output_format: str) -> None:
     """
     if output_format == "json":
         import json
-        console.print(json.dumps(data, separators=(',', ':')))
+        import sys
+        print(json.dumps(data, separators=(',', ':')), file=sys.stdout)
     elif output_format == "json-pretty":
         import json
-        console.print(json.dumps(data, indent=2))
+        import sys
+        print(json.dumps(data, indent=2), file=sys.stdout)
     elif output_format == "yaml":
         console.print(yaml.dump(data, default_flow_style=False))
     # If table format, let the calling function handle it
@@ -53,12 +55,25 @@ def list_projects(
     output_format: str = typer.Option(
         "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
     ),
+    check_uniformity: bool = typer.Option(
+        False, "--check-uniformity", help="Check for uniform column values (potential data issues)"
+    ),
 ) -> None:
-    """List all registered projects with their Jenkins server mappings."""
+    """List all registered projects."""
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
         projects = manager.list_projects()
+
+        # Check for column uniformity if requested
+        if check_uniformity:
+            uniform_issues = _check_column_uniformity(projects, manager)
+            if any(uniform_issues.values()):
+                console.print("\n[yellow]⚠️  Data Quality Warning:[/yellow]")
+                for column, is_uniform in uniform_issues.items():
+                    if is_uniform:
+                        console.print(f"[yellow]  - Column '{column}' has uniform values across all projects[/yellow]")
+                console.print()
 
         if output_format in ["json", "json-pretty", "yaml"]:
             format_output(projects, output_format)
@@ -69,10 +84,19 @@ def list_projects(
         table.add_column("Project", style="cyan")
         table.add_column("Aliases", style="magenta")
         table.add_column("GitHub Org", style="green")
-        table.add_column("Gerrit", style="blue")
+        table.add_column("Source", style="blue")
 
         for project in projects:
-            aliases_str = ", ".join(project.get("aliases", []))
+            # Handle both 'aliases' (list) and 'alias' (string) fields
+            aliases_str = ""
+            if "aliases" in project and project["aliases"]:
+                if isinstance(project["aliases"], list):
+                    aliases_str = ", ".join(project["aliases"])
+                else:
+                    aliases_str = str(project["aliases"])
+            elif "alias" in project and project["alias"]:
+                aliases_str = str(project["alias"])
+
             if not aliases_str:
                 aliases_str = "None"
 
@@ -80,18 +104,14 @@ def list_projects(
             if not github_org:
                 github_org = "Not found"
 
-            gerrit_url = project.get("gerrit_url", "")
-            if gerrit_url:
-                # Show just the domain for brevity
-                gerrit_domain = gerrit_url.replace("https://", "").replace("http://", "").split("/")[0]
-            else:
-                gerrit_domain = "None"
+            # Determine source repository type
+            source = _determine_project_source(project, manager)
 
             table.add_row(
                 project.get("name", ""),
                 aliases_str,
                 github_org,
-                gerrit_domain
+                source
             )
 
         console.print(table)
@@ -110,7 +130,7 @@ def list_servers(
         "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
     ),
 ) -> None:
-    """List all registered Jenkins servers."""
+    """List all registered servers (Jenkins, Gerrit, Nexus, etc.)."""
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
@@ -121,240 +141,32 @@ def list_servers(
             return
 
         # Default table format
-            table = Table()
-            table.add_column("Name", style="cyan")
-            table.add_column("Type", style="blue")
-            table.add_column("URL", style="magenta")
-            table.add_column("Location", style="yellow")
-            table.add_column("VPN Address", style="green")
-            table.add_column("Projects", style="white")
+        table = Table()
+        table.add_column("Server", style="cyan")
+        table.add_column("Type", style="blue")
+        table.add_column("URL", style="magenta")
+        table.add_column("Location", style="yellow")
+        table.add_column("VPN Address", style="green")
+        table.add_column("Projects", style="white")
 
-            for server in servers:
-                # Show project count or "shared" for shared infrastructure
-                projects_info = str(server.get("project_count", 0))
-                if server.get("project_count", 0) == 0 and server.get("type") == "nexus-iq":
-                    projects_info = "shared"
+        for server in servers:
+            table.add_row(
+                server.get("name", ""),
+                server.get("type", ""),
+                server.get("url", ""),
+                server.get("location", ""),
+                server.get("vpn_address", ""),
+                str(server.get("project_count", 0))
+            )
 
-                table.add_row(
-                    server.get("name", ""),
-                    server.get("type", ""),
-                    server.get("url", ""),
-                    server.get("location", ""),
-                    server.get("vpn_address", ""),
-                    projects_info
-                )
-
-            console.print(table)
+        console.print(table)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
 
-@projects_app.command("rebuild-projects")
-def rebuild_projects_db(
-    config_dir: Optional[str] = typer.Option(
-        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
-    ),
-    source_url: Optional[str] = typer.Option(
-        None, "--source", "-s", help="Source URL for project configuration"
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Force rebuild even if database exists"
-    ),
-    output_format: str = typer.Option(
-        "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
-    ),
-) -> None:
-    """Rebuild the projects database from source configuration."""
-    try:
-        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
-        manager = ProjectManager(config_path)
 
-        if output_format not in ["json", "json-pretty"]:
-            console.print("[blue]Rebuilding projects database...[/blue]")
-
-        result = manager.rebuild_projects_database(source_url=source_url, force=force)
-
-        if output_format in ["json", "json-pretty"]:
-            format_output(result, output_format)
-        else:
-            console.print("[green]Successfully rebuilt projects database[/green]")
-            console.print(f"Projects loaded: {result.get('projects_count', 0)}")
-            console.print(f"Servers discovered: {result.get('servers_count', 0)}")
-
-    except Exception as e:
-        if output_format in ["json", "json-pretty"]:
-            error_result = {"error": str(e), "success": False}
-            format_output(error_result, output_format)
-        else:
-            console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
-
-
-@projects_app.command("rebuild-servers")
-def rebuild_servers_db(
-    config_dir: Optional[str] = typer.Option(
-        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
-    ),
-    source_url: Optional[str] = typer.Option(
-        None, "--source", "-s", help="Source URL for server configuration"
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Force rebuild even if database exists"
-    ),
-    output_format: str = typer.Option(
-        "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
-    ),
-) -> None:
-    """Rebuild the servers database from source configuration."""
-    try:
-        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
-        manager = ProjectManager(config_path)
-
-        if output_format not in ["json", "json-pretty"]:
-            console.print("[blue]Rebuilding servers database...[/blue]")
-
-        result = manager.rebuild_servers_database(force=force)
-
-        if output_format in ["json", "json-pretty"]:
-            format_output(result, output_format)
-        else:
-            console.print("[green]Successfully rebuilt servers database[/green]")
-            console.print(f"Servers loaded: {result.get('servers_count', 0)}")
-            console.print(f"Projects mapped: {result.get('projects_mapped', 0)}")
-
-    except Exception as e:
-        if output_format in ["json", "json-pretty"]:
-            error_result = {"error": str(e), "success": False}
-            format_output(error_result, output_format)
-        else:
-            console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
-
-
-@projects_app.command("add-project")
-def add_project(
-    name: str = typer.Argument(..., help="Project name"),
-    primary_name: Optional[str] = typer.Option(None, "--primary", "-p", help="Primary project name"),
-    aliases: Optional[str] = typer.Option(None, "--aliases", "-a", help="Project aliases (comma-separated)"),
-    jenkins_production: Optional[str] = typer.Option(None, "--jenkins-prod", help="Production Jenkins URL"),
-    jenkins_sandbox: Optional[str] = typer.Option(None, "--jenkins-sandbox", help="Sandbox Jenkins URL"),
-    gerrit_url: Optional[str] = typer.Option(None, "--gerrit", help="Gerrit repository URL"),
-    github_org: Optional[str] = typer.Option(None, "--github", help="GitHub organization"),
-    config_dir: Optional[str] = typer.Option(
-        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
-    ),
-    output_format: str = typer.Option(
-        "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
-    ),
-) -> None:
-    """Add a new project to the database."""
-    try:
-        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
-        manager = ProjectManager(config_path)
-
-        project_data = {
-            "name": name,
-            "primary_name": primary_name or name,
-            "aliases": aliases.split(",") if aliases else [],
-            "previous_names": [],
-            "jenkins_production": jenkins_production,
-            "jenkins_sandbox": jenkins_sandbox,
-            "gerrit_url": gerrit_url,
-            "github_mirror_org": github_org,
-        }
-
-        # Attempt GitHub discovery if no GitHub org provided
-        if not github_org:
-            if output_format not in ["json", "json-pretty"]:
-                console.print(f"[blue]Discovering GitHub organization for {name}...[/blue]")
-
-            from lftools_ng.core.github_discovery import GitHubDiscovery
-
-            with GitHubDiscovery() as github_discovery:
-                discovered_org = github_discovery.discover_github_organization(project_data)
-                if discovered_org:
-                    project_data["github_mirror_org"] = discovered_org
-                    if output_format not in ["json", "json-pretty"]:
-                        console.print(f"[green]Discovered GitHub organization: {discovered_org}[/green]")
-                else:
-                    if output_format not in ["json", "json-pretty"]:
-                        console.print("[yellow]No GitHub organization found[/yellow]")
-
-        manager.add_project(project_data)
-
-        if output_format in ["json", "json-pretty"]:
-            result = {
-                "success": True,
-                "message": f"Successfully added project: {name}",
-                "project": project_data
-            }
-            format_output(result, output_format)
-        else:
-            console.print(f"[green]Successfully added project: {name}[/green]")
-
-        # Show project summary
-        if project_data.get("github_mirror_org") and output_format not in ["json", "json-pretty"]:
-            console.print(f"GitHub organization: {project_data['github_mirror_org']}")
-
-    except Exception as e:
-        if output_format in ["json", "json-pretty"]:
-            error_result = {"error": str(e), "success": False}
-            format_output(error_result, output_format)
-        else:
-            console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
-
-
-@projects_app.command("add-server")
-def add_server(
-    name: str = typer.Argument(..., help="Server name"),
-    url: str = typer.Option(..., "--url", "-u", help="Server URL"),
-    server_type: str = typer.Option("jenkins", "--type", "-t", help="Server type (jenkins, gerrit, nexus, nexus3, etc.)"),
-    location: str = typer.Option("other", "--location", "-l", help="Server location (vexxhost, aws, korg, other)"),
-    vpn_address: Optional[str] = typer.Option(None, "--vpn", help="VPN IP address"),
-    config_dir: Optional[str] = typer.Option(
-        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
-    ),
-    output_format: str = typer.Option(
-        "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
-    ),
-) -> None:
-    """Add a new server to the database."""
-    try:
-        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
-        manager = ProjectManager(config_path)
-
-        server_data: Dict[str, Any] = {
-            "name": name,
-            "url": url,
-            "type": server_type,
-            "location": location,
-            "vpn_address": vpn_address,
-            "is_production": True,
-            "projects": []
-        }
-
-        manager.add_server(server_data)
-
-        if output_format in ["json", "json-pretty"]:
-            result = {
-                "success": True,
-                "message": f"Successfully added server: {name}",
-                "server": server_data
-            }
-            format_output(result, output_format)
-        else:
-            console.print(f"[green]Successfully added server: {name}[/green]")
-
-    except Exception as e:
-        if output_format in ["json", "json-pretty"]:
-            error_result = {"error": str(e), "success": False}
-            format_output(error_result, output_format)
-        else:
-            console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
 
 
 # Repository-related commands
@@ -391,10 +203,12 @@ def list_repositories(
 
         if output_format == "json":
             import json
-            console.print(json.dumps(repositories, separators=(',', ':')))
+            import sys
+            print(json.dumps(repositories, separators=(',', ':')), file=sys.stdout)
         elif output_format == "json-pretty":
             import json
-            console.print(json.dumps(repositories, indent=2))
+            import sys
+            print(json.dumps(repositories, indent=2), file=sys.stdout)
         else:
             # Default table format
             table = Table()
@@ -454,10 +268,12 @@ def repository_info(
 
         if output_format == "json":
             import json
-            console.print(json.dumps(repo_info, separators=(',', ':')))
+            import sys
+            print(json.dumps(repo_info, separators=(',', ':')), file=sys.stdout)
         elif output_format == "json-pretty":
             import json
-            console.print(json.dumps(repo_info, indent=2))
+            import sys
+            print(json.dumps(repo_info, indent=2), file=sys.stdout)
         else:
             # Default table format
             table = Table(title=f"Repository Information: {repository}")
@@ -497,10 +313,12 @@ def list_archived_repositories(
 
         if output_format == "json":
             import json
-            console.print(json.dumps({"repositories": archived_repos}, separators=(',', ':')))
+            import sys
+            print(json.dumps({"repositories": archived_repos}, separators=(',', ':')), file=sys.stdout)
         elif output_format == "json-pretty":
             import json
-            console.print(json.dumps({"repositories": archived_repos}, indent=2))
+            import sys
+            print(json.dumps({"repositories": archived_repos}, indent=2), file=sys.stdout)
         else:
             # Default table format
             table = Table(title="Archived Repositories")
@@ -521,3 +339,182 @@ def list_archived_repositories(
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
+
+
+@projects_app.command("rebuild-projects")
+def rebuild_projects_database(
+    config_dir: Optional[str] = typer.Option(
+        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
+    ),
+    source: Optional[str] = typer.Option(
+        None, "--source", "-s", help="Source URL for projects configuration"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force rebuild even if database exists"
+    ),
+) -> None:
+    """Rebuild the projects database from source configuration."""
+    try:
+        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
+        manager = ProjectManager(config_path)
+
+        result = manager.rebuild_projects_database(source_url=source, force=force)
+
+        console.print(f"[green]✓[/green] Successfully rebuilt projects database")
+        console.print(f"  Projects: {result['projects_count']}")
+        if 'servers_count' in result:
+            console.print(f"  Servers: {result['servers_count']}")
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@projects_app.command("rebuild-servers")
+def rebuild_servers_database(
+    config_dir: Optional[str] = typer.Option(
+        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
+    ),
+    source: Optional[str] = typer.Option(
+        None, "--source", "-s", help="Source URL for servers configuration"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force rebuild even if database exists"
+    ),
+) -> None:
+    """Rebuild the servers database from source configuration."""
+    try:
+        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
+        manager = ProjectManager(config_path)
+
+        result = manager.rebuild_servers_database(source_url=source, force=force)
+
+        console.print(f"[green]✓[/green] Successfully rebuilt servers database")
+        console.print(f"  Servers: {result['servers_count']}")
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def _check_column_uniformity(projects: List[Dict[str, Any]], manager: ProjectManager) -> Dict[str, bool]:
+    """Check if any columns have uniform values across all projects.
+
+    This is a utility to detect potential bugs where data isn't being loaded correctly.
+
+    Args:
+        projects: List of project dictionaries
+        manager: ProjectManager instance
+
+    Returns:
+        Dictionary mapping column names to True if uniform (potential issue)
+    """
+    if not projects:
+        return {}
+
+    # Extract column values
+    columns: Dict[str, List[str]] = {
+        "aliases": [],
+        "github_org": [],
+        "source": []
+    }
+
+    for project in projects:
+        # Get aliases
+        aliases_str = ""
+        if "aliases" in project and project["aliases"]:
+            if isinstance(project["aliases"], list):
+                aliases_str = ", ".join(str(alias) for alias in project["aliases"])
+            else:
+                aliases_str = str(project["aliases"])
+        elif "alias" in project and project["alias"]:
+            aliases_str = str(project["alias"])
+
+        if not aliases_str:
+            aliases_str = "None"
+        columns["aliases"].append(aliases_str)
+
+        # Get GitHub org
+        github_org = project.get("github_mirror_org", "")
+        if not github_org:
+            github_org = "Not found"
+        columns["github_org"].append(github_org)
+
+        # Get source
+        source = _determine_project_source(project, manager)
+        columns["source"].append(source)
+
+    # Check for uniformity
+    uniform_columns = {}
+    for column_name, values in columns.items():
+        unique_values = set(values)
+        uniform_columns[column_name] = len(unique_values) == 1
+
+    return uniform_columns
+
+
+def _determine_project_source(project: Dict[str, Any], manager: ProjectManager) -> str:
+    """Determine the primary source repository type for a project.
+
+    Args:
+        project: Project data dictionary
+        manager: ProjectManager instance for accessing server data
+
+    Returns:
+        Source type: "Gerrit", "GitHub", or "Unknown"
+    """
+    project_name = project.get("name", "")
+
+    # Check if project has an active Gerrit server - this is the definitive indicator
+    try:
+        servers = manager.list_servers()
+
+        # Look for Gerrit servers associated with this project
+        for server in servers:
+            if server.get("type") == "gerrit":
+                server_projects = server.get("projects", [])
+                if project_name in server_projects:
+                    return "Gerrit"
+
+    except Exception:
+        # If we can't load servers, fall back to other checks
+        pass
+
+    # Check repository data for Gerrit indicators
+    try:
+        repositories_data = manager.list_repositories(project_name)
+        repositories = repositories_data.get("repositories", [])
+
+        for repo in repositories:
+            # Check if repository's project matches our project name
+            if repo.get("project", "").lower() == project_name.lower():
+                # Check if repository description mentions gerrit
+                description = repo.get("description", "")
+                if "gerrit" in description.lower():
+                    return "Gerrit"
+
+                # Check if repository has gerrit_path
+                if repo.get("gerrit_path"):
+                    return "Gerrit"
+
+    except Exception:
+        # If we can't load repositories, continue with fallbacks
+        pass
+
+    # Fallback: Check if project has explicit gerrit_url configuration
+    gerrit_url = project.get("gerrit_url")
+    if gerrit_url:
+        return "Gerrit"
+
+    # Default to GitHub if we have a GitHub org, otherwise Unknown
+    github_org = project.get("github_mirror_org")
+    if github_org:
+        return "GitHub"
+
+    return "Unknown"

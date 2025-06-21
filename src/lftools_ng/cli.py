@@ -12,6 +12,7 @@ from rich.table import Table
 from lftools_ng import __version__
 from lftools_ng.commands.jenkins import jenkins_app
 from lftools_ng.commands.projects import projects_app
+from lftools_ng.commands.rebuild import rebuild_app
 
 app = typer.Typer(
     name="lftools-ng",
@@ -24,6 +25,7 @@ console = Console()
 # Add subcommand groups
 app.add_typer(jenkins_app, name="jenkins", help="Jenkins server operations")
 app.add_typer(projects_app, name="projects", help="Project management operations")
+app.add_typer(rebuild_app, name="rebuild-data", help="Rebuild all backend data files")
 
 
 @app.callback(invoke_without_command=True)
@@ -37,32 +39,26 @@ def main(
     ),
 ) -> None:
     """Next-generation Linux Foundation Release Engineering Tools."""
-    if version:
-        console.print(f"lftools-ng version {__version__}")
-        raise typer.Exit()
-
     if verbose:
         import logging
         logging.basicConfig(level=logging.DEBUG)
 
+    if version:
+        table = Table(title="lftools-ng Information")
+        table.add_column("Property", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
+
+        table.add_row("Version", __version__)
+        table.add_row("Purpose", "Linux Foundation Release Engineering Tools")
+        table.add_row("License", "Apache-2.0")
+        table.add_row("Author", "LF Release Engineering")
+
+        console.print(table)
+        raise typer.Exit()
+
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
         raise typer.Exit()
-
-
-@app.command()
-def info() -> None:
-    """Display information about lftools-ng."""
-    table = Table(title="lftools-ng Information")
-    table.add_column("Property", style="cyan", no_wrap=True)
-    table.add_column("Value", style="magenta")
-
-    table.add_row("Version", __version__)
-    table.add_row("Purpose", "Linux Foundation Release Engineering Tools")
-    table.add_row("License", "Apache-2.0")
-    table.add_row("Author", "LF Release Engineering")
-
-    console.print(table)
 
 
 if __name__ == "__main__":

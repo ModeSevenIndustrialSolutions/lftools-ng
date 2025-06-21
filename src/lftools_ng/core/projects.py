@@ -6,6 +6,7 @@
 import logging
 import pathlib
 import shutil
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -31,11 +32,12 @@ FDIO_ALT_KEY = "fdio"
 class ProjectManager:
     """Manages projects and Jenkins server mappings."""
 
-    def __init__(self, config_dir: pathlib.Path) -> None:
+    def __init__(self, config_dir: pathlib.Path, auto_init: bool = True) -> None:
         """Initialize project manager.
 
         Args:
             config_dir: Directory path for configuration files
+            auto_init: Whether to auto-initialize config from resources
         """
         self.config_dir = config_dir
         self.projects_file = config_dir / "projects.yaml"
@@ -46,7 +48,8 @@ class ProjectManager:
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
         # Auto-initialize configuration from resources if needed
-        self._auto_initialize_config()
+        if auto_init:
+            self._auto_initialize_config()
 
     def _auto_initialize_config(self) -> None:
         """Auto-initialize configuration from resources directory if config files don't exist."""
@@ -99,7 +102,8 @@ class ProjectManager:
                 projects = data.get("projects", [])
                 if not isinstance(projects, list):
                     return []
-                return projects
+                # Filter out any None entries that might have been parsed from YAML
+                return [p for p in projects if p is not None]
         except Exception as e:
             logger.error(f"Failed to load projects: {e}")
             return []
@@ -119,7 +123,15 @@ class ProjectManager:
                 data = yaml.safe_load(f)
                 if data is None:
                     return []
-                servers = data.get("servers", [])
+
+                # Handle both dictionary and list formats
+                if isinstance(data, dict):
+                    servers = data.get("servers", [])
+                elif isinstance(data, list):
+                    servers = data
+                else:
+                    return []
+
                 if not isinstance(servers, list):
                     return []
 
@@ -210,64 +222,7 @@ class ProjectManager:
 
         return None
 
-    def add_project(self, project_data: Dict[str, Any]) -> None:
-        """Add a new project.
 
-        Args:
-            project_data: Project information dictionary
-        """
-        projects = self.list_projects()
-
-        # Check for duplicate project names or aliases
-        existing_names = {p.get("name") for p in projects}
-        # Collect all existing aliases from all projects
-        existing_aliases = set()
-        for p in projects:
-            aliases = p.get("aliases", [])
-            if isinstance(aliases, list):
-                existing_aliases.update(aliases)
-
-        if project_data.get("name") in existing_names:
-            raise ValueError(f"Project name '{project_data['name']}' already exists")
-
-        # Check if any of the new project's aliases conflict with existing ones
-        new_aliases = project_data.get("aliases", [])
-        if isinstance(new_aliases, list):
-            for alias in new_aliases:
-                if alias in existing_aliases:
-                    raise ValueError(f"Project alias '{alias}' already exists")
-
-        # Add status and timestamp
-        project_data["status"] = "active"
-        project_data["created"] = self._current_timestamp()
-
-        projects.append(project_data)
-        self._save_projects(projects)
-
-    def add_server(self, server_data: Dict[str, Any]) -> None:
-        """Add a new Jenkins server.
-
-        Args:
-            server_data: Server information dictionary
-        """
-        servers = self.list_servers()
-
-        # Check for duplicate server names
-        existing_names = {s.get("name") for s in servers}
-        existing_urls = {s.get("url") for s in servers}
-
-        if server_data.get("name") in existing_names:
-            raise ValueError(f"Server name '{server_data['name']}' already exists")
-
-        if server_data.get("url") in existing_urls:
-            raise ValueError(f"Server URL '{server_data['url']}' already exists")
-
-        # Add status and timestamp
-        server_data["status"] = "active"
-        server_data["created"] = self._current_timestamp()
-
-        servers.append(server_data)
-        self._save_servers(servers)
 
     def rebuild_projects_database(
         self,
@@ -290,41 +245,43 @@ class ProjectManager:
 
         # Default source URLs for LF projects
         if not source_url:
-            source_url = (
-                "https://raw.githubusercontent.com/lfit/releng-global-jjb/"
-                "main/jenkins-config/projects.yaml"
-            )
+            # Try to find local resources file relative to the package
+            # Go up from src/lftools_ng/core/projects.py to the project root
+            package_root = pathlib.Path(__file__).parent.parent.parent.parent
+            local_projects_file = package_root / "resources" / "projects.yaml"
+            if local_projects_file.exists():
+                source_url = f"file://{local_projects_file}"
+            else:
+                raise FileNotFoundError(
+                    f"Projects resource file not found at {local_projects_file}. "
+                    "Please ensure the resources directory is present, or specify a source URL."
+                )
 
         try:
             # Fetch project configuration
             logger.info(f"Fetching project configuration from: {source_url}")
-            with httpx.Client(timeout=30) as client:
-                response = client.get(source_url)
-                response.raise_for_status()
+            content = self._fetch_config_file(source_url)
 
-                # Parse configuration
-                if source_url.endswith(".yaml") or source_url.endswith(".yml"):
-                    config_data = yaml.safe_load(response.text)
-                else:
-                    config_data = response.json()
+            # Parse configuration (always use YAML for our purposes)
+            config_data = yaml.safe_load(content)
 
-                # Extract projects
-                projects = self._extract_projects_from_config(config_data)
+            # Extract projects
+            projects = self._extract_projects_from_config(config_data)
 
-                # Enhance projects with GitHub discovery
-                self._enhance_projects_with_github_discovery(projects)
+            # Enhance projects with GitHub discovery
+            self._enhance_projects_with_github_discovery(projects)
 
-                servers = self._extract_servers_from_projects(projects)
+            servers = self._extract_servers_from_projects(projects)
 
-                # Save to files
-                self._save_projects(projects)
-                self._save_servers(servers)
+            # Save to files
+            self._save_projects(projects)
+            self._save_servers(servers)
 
-                logger.info(f"Rebuilt projects database with {len(projects)} projects")
-                return {
-                    "projects_count": len(projects),
-                    "servers_count": len(servers)
-                }
+            logger.info(f"Rebuilt projects database with {len(projects)} projects")
+            return {
+                "projects_count": len(projects),
+                "servers_count": len(servers)
+            }
 
         except Exception as e:
             logger.error(f"Failed to rebuild projects database: {e}")
@@ -351,59 +308,129 @@ class ProjectManager:
 
         # Default source URLs for LF servers
         if not source_url:
-            source_url = (
-                "https://raw.githubusercontent.com/lfit/releng-global-jjb/"
-                "main/jenkins-config/servers.yaml"
-            )
+            # Try to find local resources file relative to the package
+            # Go up from src/lftools_ng/core/projects.py to the project root
+            package_root = pathlib.Path(__file__).parent.parent.parent.parent
+            local_servers_file = package_root / "resources" / "servers.yaml"
+            if local_servers_file.exists():
+                source_url = f"file://{local_servers_file}"
+            else:
+                raise FileNotFoundError(
+                    f"Servers resource file not found at {local_servers_file}. "
+                    "Please ensure the resources directory is present, or specify a source URL."
+                )
 
         try:
             # Fetch server configuration
             logger.info(f"Fetching server configuration from: {source_url}")
-            with httpx.Client(timeout=30) as client:
-                response = client.get(source_url)
-                response.raise_for_status()
+            content = self._fetch_config_file(source_url)
 
-                # Parse configuration
-                if source_url.endswith(".yaml") or source_url.endswith(".yml"):
-                    config_data = yaml.safe_load(response.text)
-                else:
-                    config_data = response.json()
+            # Parse configuration (always use YAML for our purposes)
+            config_data = yaml.safe_load(content)
 
-                # Extract servers
-                servers = self._extract_servers_from_config(config_data)
-                projects = self.list_projects()
+            # Extract servers
+            servers = self._extract_servers_from_config(config_data)
+            projects = self.list_projects()
 
-                # Map projects to servers
+            # Map projects to servers
+            try:
                 projects_mapped = self._map_projects_to_servers(projects, servers)
+            except AttributeError as e:
+                logger.error(f"Error in _map_projects_to_servers: {e}")
+                logger.error(f"Projects type: {type(projects)}, length: {len(projects) if projects else 'N/A'}")
+                logger.error(f"Servers type: {type(servers)}, length: {len(servers) if servers else 'N/A'}")
+                if projects:
+                    logger.error(f"First few projects: {projects[:3]}")
+                if servers:
+                    logger.error(f"First few servers: {servers[:3]}")
+                raise
 
-                # Save to file
-                self._save_servers(servers)
+            # Save to file
+            self._save_servers(servers)
 
-                logger.info(f"Rebuilt servers database with {len(servers)} servers")
-                return {
-                    "servers_count": len(servers),
-                    "projects_mapped": projects_mapped
-                }
+            logger.info(f"Rebuilt servers database with {len(servers)} servers")
+
+            return {
+                "servers_count": len(servers),
+                "projects_mapped": projects_mapped
+            }
 
         except Exception as e:
             logger.error(f"Failed to rebuild servers database: {e}")
             raise
 
+    def _fetch_config_file(self, source_url: str) -> str:
+        """
+        Fetch configuration file from local file system or remote URL.
+
+        Args:
+            source_url: URL or file path to fetch from
+
+        Returns:
+            Content of the file as string
+        """
+        if source_url.startswith('file://'):
+            # Handle local file paths
+            file_path = source_url[7:]  # Remove 'file://' prefix
+            if not os.path.isabs(file_path):
+                # Make relative paths relative to the package root
+                package_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                file_path = os.path.join(package_root, file_path)
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except IOError as e:
+                raise Exception(f"Failed to read local file {file_path}: {e}")
+        else:
+            # Handle remote URLs
+            try:
+                with httpx.Client(timeout=30) as client:
+                    response = client.get(source_url)
+                    response.raise_for_status()
+                    return str(response.text)
+            except httpx.HTTPStatusError as e:
+                raise Exception(f"Failed to fetch from {source_url}: {e}")
+            except httpx.RequestError as e:
+                raise Exception(f"Network error fetching from {source_url}: {e}")
+
     def _extract_projects_from_config(self, config_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Extract projects from configuration data."""
         projects = []
 
-        # This is a placeholder implementation - would need to be adapted
-        # based on the actual structure of the LF project configuration
+        # Extract projects from the rich configuration data
         if "projects" in config_data:
             for project_config in config_data["projects"]:
+                # Preserve all the rich data from the resources file
                 project = {
                     "name": project_config.get("name", "unknown"),
-                    "alias": project_config.get("alias", project_config.get("name", "unknown")[:8]),
+                    "primary_name": project_config.get("primary_name", project_config.get("name", "unknown")),
+                    "aliases": project_config.get("aliases", []),
+                    "previous_names": project_config.get("previous_names", []),
+                    "gerrit_url": project_config.get("gerrit_url"),
+                    "github_mirror_org": project_config.get("github_mirror_org"),
+                    "jenkins_production": project_config.get("jenkins_production"),
+                    "jenkins_sandbox": project_config.get("jenkins_sandbox"),
+                    "nexus_url": project_config.get("nexus_url"),
+                    "nexus3_url": project_config.get("nexus3_url"),
+                    "wiki_url": project_config.get("wiki_url"),
+                    "wiki_type": project_config.get("wiki_type"),
+                    "docs_url": project_config.get("docs_url"),
+                    "issue_tracking_url": project_config.get("issue_tracking_url"),
+                    "issue_tracking_type": project_config.get("issue_tracking_type"),
+                    "sonar_url": project_config.get("sonar_url"),
+                    "logs_url": project_config.get("logs_url"),
                     "jenkins_server": project_config.get("jenkins_server", "unknown"),
                     "status": "active",
                     "created": self._current_timestamp()
                 }
+
+                # For backward compatibility, also set 'alias' field from first alias if available
+                if project["aliases"]:
+                    project["alias"] = project["aliases"][0]
+                else:
+                    project["alias"] = project["name"]
+
                 projects.append(project)
 
         return projects
@@ -415,9 +442,17 @@ class ProjectManager:
         # This is a placeholder implementation
         if "servers" in config_data:
             for server_config in config_data["servers"]:
+                # Skip None entries
+                if server_config is None:
+                    logger.warning("Skipping None server entry in configuration")
+                    continue
+
                 server_name = server_config.get("name", "unknown")
                 server_url = server_config.get("url", "")
                 server_type = server_config.get("type", "jenkins")  # Default to jenkins
+                vpn_address = server_config.get("vpn_address", "")
+                location = server_config.get("location", "")
+                projects = server_config.get("projects", [])  # Extract projects list
 
                 # If no URL provided, try to infer it
                 if not server_url:
@@ -432,6 +467,10 @@ class ProjectManager:
                     "name": server_name,
                     "url": server_url,
                     "type": server_type,
+                    "vpn_address": vpn_address,
+                    "location": location,
+                    "projects": projects,
+                    "project_count": len(projects),
                     "status": "active",
                     "created": self._current_timestamp()
                 }
@@ -791,6 +830,11 @@ class ProjectManager:
         server_names = set()
 
         for project in projects:
+            # Skip None entries
+            if project is None:
+                logger.warning("Skipping None project entry")
+                continue
+
             server_name = project.get("jenkins_server")
             if server_name and server_name not in server_names:
                 # Try to infer URL from server name
@@ -822,11 +866,11 @@ class ProjectManager:
         servers: List[Dict[str, Any]]
     ) -> int:
         """Map projects to servers and return count of mapped projects."""
-        server_names = {s.get("name") for s in servers}
+        server_names = {s.get("name") for s in servers if s is not None}
         mapped_count = 0
 
         for project in projects:
-            if project.get("jenkins_server") in server_names:
+            if project is not None and project.get("jenkins_server") in server_names:
                 mapped_count += 1
 
         return mapped_count

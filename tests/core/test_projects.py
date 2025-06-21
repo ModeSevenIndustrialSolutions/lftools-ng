@@ -31,7 +31,7 @@ class TestProjectManager:
         """Test listing projects when no file exists."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
+            manager = ProjectManager(config_dir, auto_init=False)
 
             projects = manager.list_projects()
             assert projects == []
@@ -40,7 +40,7 @@ class TestProjectManager:
         """Test listing projects with existing data."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
+            manager = ProjectManager(config_dir, auto_init=False)
 
             # Create test data
             test_data = {
@@ -65,7 +65,7 @@ class TestProjectManager:
         """Test listing servers when no file exists."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
+            manager = ProjectManager(config_dir, auto_init=False)
 
             servers = manager.list_servers()
             assert servers == []
@@ -74,7 +74,7 @@ class TestProjectManager:
         """Test listing servers with existing data."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
+            manager = ProjectManager(config_dir, auto_init=False)
 
             # Create test server data
             test_servers = {
@@ -108,88 +108,12 @@ class TestProjectManager:
             assert servers[0]["name"] == "jenkins.example.com"
             assert servers[0]["project_count"] == 1
 
-    def test_add_project(self) -> None:
-        """Test adding a new project."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
-
-            project_data = {
-                "name": "new-project",
-                "alias": "new",
-                "jenkins_server": "jenkins.example.com",
-            }
-
-            manager.add_project(project_data)
-
-            # Verify project was added
-            projects = manager.list_projects()
-            assert len(projects) == 1
-            assert projects[0]["name"] == "new-project"
-            assert "created" in projects[0]
-
-    def test_add_project_duplicate_name(self) -> None:
-        """Test adding a project with duplicate name."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
-
-            # Add first project
-            project_data = {
-                "name": "test-project",
-                "alias": "test1",
-                "jenkins_server": "jenkins.example.com",
-            }
-            manager.add_project(project_data)
-
-            # Try to add duplicate
-            duplicate_data = {
-                "name": "test-project",
-                "alias": "test2",
-                "jenkins_server": "jenkins.example.com",
-            }
-
-            with pytest.raises(ValueError, match="Project name .* already exists"):
-                manager.add_project(duplicate_data)
-
-    def test_add_server(self) -> None:
-        """Test adding a new server."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
-
-            server_data = {"name": "jenkins.example.com", "url": "https://jenkins.example.com"}
-
-            manager.add_server(server_data)
-
-            # Verify server was added
-            servers = manager.list_servers()
-            assert len(servers) == 1
-            assert servers[0]["name"] == "jenkins.example.com"
-            assert "created" in servers[0]
-
-    def test_add_server_duplicate_name(self) -> None:
-        """Test adding a server with duplicate name."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
-
-            # Add first server
-            server_data = {"name": "jenkins.example.com", "url": "https://jenkins.example.com"}
-            manager.add_server(server_data)
-
-            # Try to add duplicate
-            duplicate_data = {"name": "jenkins.example.com", "url": "https://jenkins2.example.com"}
-
-            with pytest.raises(ValueError, match="Server name .* already exists"):
-                manager.add_server(duplicate_data)
-
     @patch("lftools_ng.core.projects.httpx.Client")
     def test_rebuild_projects_database(self, mock_client_class: Mock) -> None:
         """Test rebuilding projects database."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = pathlib.Path(temp_dir) / "config"
-            manager = ProjectManager(config_dir)
+            manager = ProjectManager(config_dir, auto_init=False)
 
             # Mock HTTP response
             mock_response = Mock()
@@ -210,7 +134,9 @@ class TestProjectManager:
             mock_client.get.return_value = mock_response
             mock_client_class.return_value.__enter__.return_value = mock_client
 
-            result = manager.rebuild_projects_database(force=True)
+            result = manager.rebuild_projects_database(
+                source_url="https://example.com/projects.yaml", force=True
+            )
 
             assert result["projects_count"] == 1
             assert result["servers_count"] == 1
@@ -234,7 +160,7 @@ class TestProjectManager:
 
     def test_load_projects_db_empty_file(self, tmp_path: pathlib.Path) -> None:
         """Test loading projects database when file doesn't exist."""
-        manager = ProjectManager(tmp_path)
+        manager = ProjectManager(tmp_path, auto_init=False)
         projects = manager.list_projects()
         assert projects == []
 
@@ -267,7 +193,7 @@ class TestProjectManager:
 
     def test_load_servers_db_empty_file(self, tmp_path: pathlib.Path) -> None:
         """Test loading servers database when file doesn't exist."""
-        manager = ProjectManager(tmp_path)
+        manager = ProjectManager(tmp_path, auto_init=False)
         servers = manager.list_servers()
         assert servers == []
 
@@ -300,22 +226,26 @@ class TestProjectManager:
 
     def test_list_projects_from_sample(self, tmp_path: pathlib.Path) -> None:
         """Test list_projects method with sample data."""
-        manager = ProjectManager(tmp_path)
-        # Create projects database first
-        manager.rebuild_projects_database()
+        manager = ProjectManager(tmp_path, auto_init=False)
+
+        # Create an empty projects file
+        with open(manager.projects_file, "w") as f:
+            yaml.dump({"projects": []}, f)
 
         projects = manager.list_projects()
-        # Should return projects from the sample data
+        # Should return empty list since we created an empty projects file
         assert len(projects) == 0
 
     def test_list_servers_from_sample(self, tmp_path: pathlib.Path) -> None:
         """Test list_servers method with sample data."""
-        manager = ProjectManager(tmp_path)
-        # Create servers database first
-        manager.rebuild_servers_database()
+        manager = ProjectManager(tmp_path, auto_init=False)
+
+        # Create an empty servers file
+        with open(manager.servers_file, "w") as f:
+            yaml.dump({"servers": []}, f)
 
         servers = manager.list_servers()
-        # Should return servers from the sample data
+        # Should return empty list since we created an empty servers file
         assert len(servers) == 0
 
     def test_extract_servers_from_projects(self, tmp_path: pathlib.Path) -> None:
@@ -338,7 +268,7 @@ class TestProjectManager:
 
     def test_list_servers_with_projects(self, tmp_path: pathlib.Path) -> None:
         """Test listing servers with project count calculation."""
-        manager = ProjectManager(tmp_path)
+        manager = ProjectManager(tmp_path, auto_init=False)
 
         # Create servers data
         servers_data = {
@@ -351,11 +281,13 @@ class TestProjectManager:
             yaml.dump(servers_data, f)
 
         # Create projects data with jenkins_production references
-        projects_data = [
-            {"name": "project1", "jenkins_production": "https://jenkins1.example.com"},
-            {"name": "project2", "jenkins_production": "https://jenkins1.example.com"},
-            {"name": "project3", "jenkins_production": "https://jenkins2.example.com"},
-        ]
+        projects_data = {
+            "projects": [
+                {"name": "project1", "jenkins_production": "https://jenkins1.example.com"},
+                {"name": "project2", "jenkins_production": "https://jenkins1.example.com"},
+                {"name": "project3", "jenkins_production": "https://jenkins2.example.com"},
+            ]
+        }
         with open(manager.projects_file, "w", encoding="utf-8") as f:
             yaml.dump(projects_data, f)
 
@@ -371,7 +303,7 @@ class TestProjectManager:
 
     def test_list_servers_list_format(self, tmp_path: pathlib.Path) -> None:
         """Test loading servers database when data is a list."""
-        manager = ProjectManager(tmp_path)
+        manager = ProjectManager(tmp_path, auto_init=False)
         # Create servers data as a list (not dict with 'servers' key)
         servers_data = [
             {"name": "jenkins1", "url": "https://jenkins1.example.com"},
