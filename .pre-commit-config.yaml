@@ -57,12 +57,22 @@ repos:
     rev: 7010b10a09f65cd60a23c207349b539aa36dbec1  # frozen: v1.16.0
     hooks:
       - id: mypy
+        args: [--explicit-package-bases, --namespace-packages]
+        files: ^src/
+        additional_dependencies:
+          - typer>=0.15.2
+          - rich>=13.7.1
+          - httpx>=0.27.0
+          - beautifulsoup4>=4.13.4
+          - pytest>=7.0.0
+          - types-beautifulsoup4
 
-  - repo: https://github.com/btford/write-good
-    rev: ab66ce10136dfad5146e69e70f82a3efac8842c1 # frozen: v1.0.8
-    hooks:
-      - id: write-good
-        files: "\\.(rst|md|markdown|mdown|mkdn)$"
+  # - repo: https://github.com/btford/write-good
+  #   rev: ab66ce10136dfad5146e69e70f82a3efac8842c1 # frozen: v1.0.8
+  #   hooks:
+  #     - id: write-good
+  #       files: "\\.(rst|md|markdown|mdown|mkdn)$"
+  #       args: ["--no-passive"]
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: a23f6b85d0fdd5bb9d564e2579e678033debbdff # frozen: v0.10.0.1

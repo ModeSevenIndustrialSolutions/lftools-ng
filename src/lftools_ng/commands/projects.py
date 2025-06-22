@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from lftools_ng.core.projects import ProjectManager
+from lftools_ng.core.output import format_and_output, create_filter_from_options
 
 projects_app = typer.Typer(
     name="projects",
@@ -58,16 +59,57 @@ def list_projects(
     check_uniformity: bool = typer.Option(
         False, "--check-uniformity", help="Check for uniform column values (potential data issues)"
     ),
+    include: Optional[List[str]] = typer.Option(
+        None, "--include", "-i",
+        help="Include filters (e.g., 'name=*test*', 'github_mirror_org!=', 'source=github')"
+    ),
+    exclude: Optional[List[str]] = typer.Option(
+        None, "--exclude", "-e",
+        help="Exclude filters (same syntax as include filters)"
+    ),
+    fields: Optional[str] = typer.Option(
+        None, "--fields",
+        help="Fields to include in output (comma-separated, e.g., 'name,github_mirror_org,source')"
+    ),
+    exclude_fields: Optional[str] = typer.Option(
+        None, "--exclude-fields",
+        help="Fields to exclude from output (comma-separated)"
+    ),
 ) -> None:
-    """List all registered projects."""
+    """List all registered projects with powerful filtering capabilities.
+
+    Filter examples:
+    - Include projects with 'test' in name: --include 'name~=test'
+    - Exclude projects without GitHub org: --exclude 'github_mirror_org:empty'
+    - Only show specific fields: --fields 'name,github_mirror_org'
+    - Multiple filters: --include 'source=github' --include 'name~=linux'
+    """
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
         projects = manager.list_projects()
 
+        # Enhance projects data with computed fields
+        enhanced_projects = []
+        for project in projects:
+            enhanced_project = project.copy()
+
+            # Add computed aliases field
+            aliases_str = _get_aliases_string(project)
+            enhanced_project["aliases_display"] = aliases_str
+
+            # Add computed github_mirror_org field
+            github_org = project.get("github_mirror_org", "")
+            enhanced_project["github_mirror_org_display"] = github_org if github_org else "Not found"
+
+            # Add computed source field
+            enhanced_project["source"] = _determine_project_source(project, manager)
+
+            enhanced_projects.append(enhanced_project)
+
         # Check for column uniformity if requested
         if check_uniformity:
-            uniform_issues = _check_column_uniformity(projects, manager)
+            uniform_issues = _check_column_uniformity(enhanced_projects, manager)
             if any(uniform_issues.values()):
                 console.print("\n[yellow]⚠️  Data Quality Warning:[/yellow]")
                 for column, is_uniform in uniform_issues.items():
@@ -75,50 +117,40 @@ def list_projects(
                         console.print(f"[yellow]  - Column '{column}' has uniform values across all projects[/yellow]")
                 console.print()
 
-        if output_format in ["json", "json-pretty", "yaml"]:
-            format_output(projects, output_format)
-            return
+        # Create filter from options
+        data_filter = create_filter_from_options(include, exclude, fields, exclude_fields)
 
-        # Default table format
-        table = Table()
-        table.add_column("Project", style="cyan")
-        table.add_column("Aliases", style="magenta")
-        table.add_column("GitHub Org", style="green")
-        table.add_column("Source", style="blue")
+        # Configure table output
+        table_config = {
+            "title": "Registered Projects",
+            "columns": [
+                {"name": "Project", "field": "name", "style": "cyan"},
+                {"name": "Aliases", "field": "aliases_display", "style": "magenta"},
+                {"name": "GitHub Org", "field": "github_mirror_org_display", "style": "green"},
+                {"name": "Source", "field": "source", "style": "blue"}
+            ]
+        }
 
-        for project in projects:
-            # Handle both 'aliases' (list) and 'alias' (string) fields
-            aliases_str = ""
-            if "aliases" in project and project["aliases"]:
-                if isinstance(project["aliases"], list):
-                    aliases_str = ", ".join(project["aliases"])
-                else:
-                    aliases_str = str(project["aliases"])
-            elif "alias" in project and project["alias"]:
-                aliases_str = str(project["alias"])
-
-            if not aliases_str:
-                aliases_str = "None"
-
-            github_org = project.get("github_mirror_org", "")
-            if not github_org:
-                github_org = "Not found"
-
-            # Determine source repository type
-            source = _determine_project_source(project, manager)
-
-            table.add_row(
-                project.get("name", ""),
-                aliases_str,
-                github_org,
-                source
-            )
-
-        console.print(table)
+        # Use enhanced formatter
+        format_and_output(enhanced_projects, output_format, data_filter, table_config)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
+
+
+def _get_aliases_string(project: Dict[str, Any]) -> str:
+    """Get aliases as a display string."""
+    aliases_str = ""
+    if "aliases" in project and project["aliases"]:
+        if isinstance(project["aliases"], list):
+            aliases_str = ", ".join(str(alias) for alias in project["aliases"])
+        else:
+            aliases_str = str(project["aliases"])
+    elif "alias" in project and project["alias"]:
+        aliases_str = str(project["alias"])
+
+    return aliases_str if aliases_str else "None"
 
 
 @projects_app.command("servers")
@@ -129,37 +161,54 @@ def list_servers(
     output_format: str = typer.Option(
         "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
     ),
+    include: Optional[List[str]] = typer.Option(
+        None, "--include", "-i",
+        help="Include filters (e.g., 'type=jenkins', 'location~=virginia', 'project_count>5')"
+    ),
+    exclude: Optional[List[str]] = typer.Option(
+        None, "--exclude", "-e",
+        help="Exclude filters (same syntax as include filters)"
+    ),
+    fields: Optional[str] = typer.Option(
+        None, "--fields",
+        help="Fields to include in output (comma-separated, e.g., 'name,type,url')"
+    ),
+    exclude_fields: Optional[str] = typer.Option(
+        None, "--exclude-fields",
+        help="Fields to exclude from output (comma-separated)"
+    ),
 ) -> None:
-    """List all registered servers (Jenkins, Gerrit, Nexus, etc.)."""
+    """List all registered servers (Jenkins, Gerrit, Nexus, etc.) with filtering capabilities.
+
+    Filter examples:
+    - Only Jenkins servers: --include 'type=jenkins'
+    - Servers in Virginia: --include 'location~=virginia'
+    - Exclude test servers: --exclude 'name~=test'
+    - Show only name and URL: --fields 'name,url'
+    """
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
         servers = manager.list_servers()
 
-        if output_format in ["json", "json-pretty", "yaml"]:
-            format_output(servers, output_format)
-            return
+        # Create filter from options
+        data_filter = create_filter_from_options(include, exclude, fields, exclude_fields)
 
-        # Default table format
-        table = Table()
-        table.add_column("Server", style="cyan")
-        table.add_column("Type", style="blue")
-        table.add_column("URL", style="magenta")
-        table.add_column("Location", style="yellow")
-        table.add_column("VPN Address", style="green")
-        table.add_column("Projects", style="white")
+        # Configure table output
+        table_config = {
+            "title": "Registered Servers",
+            "columns": [
+                {"name": "Server", "field": "name", "style": "cyan"},
+                {"name": "Type", "field": "type", "style": "blue"},
+                {"name": "URL", "field": "url", "style": "magenta"},
+                {"name": "Location", "field": "location", "style": "yellow"},
+                {"name": "VPN Address", "field": "vpn_address", "style": "green"},
+                {"name": "Projects", "field": "project_count", "style": "white", "format": "count"}
+            ]
+        }
 
-        for server in servers:
-            table.add_row(
-                server.get("name", ""),
-                server.get("type", ""),
-                server.get("url", ""),
-                server.get("location", ""),
-                server.get("vpn_address", ""),
-                str(server.get("project_count", 0))
-            )
-
-        console.print(table)
+        # Use enhanced formatter
+        format_and_output(servers, output_format, data_filter, table_config)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
