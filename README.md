@@ -315,7 +315,7 @@ pre-commit install
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (excludes integration tests by default)
 pdm run pytest
 
 # Run with coverage
@@ -323,7 +323,17 @@ pdm run pytest --cov
 
 # Run specific test file
 pdm run pytest tests/core/test_jenkins.py
+
+# Run integration tests (may require external resources like Jenkins servers)
+pdm run pytest -m integration
+
+# Run both unit and integration tests
+pdm run pytest -m "not slow"  # or use specific markers
 ```
+
+**Note**: Integration tests are skipped by default because they may require external
+resources (like Jenkins servers with proper credentials). They can be run explicitly using
+the `-m integration` flag.
 
 ### Code Quality
 
