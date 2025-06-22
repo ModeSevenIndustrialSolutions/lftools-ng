@@ -16,6 +16,38 @@ command-line use and library integration.
 
 ## Features
 
+### 🔍 Universal Filtering System ⭐ **PRIMARY FEATURE**
+
+**lftools-ng** includes a comprehensive filtering system that works across ALL commands returning data.
+This is a **core feature** that provides powerful data manipulation capabilities:
+
+- **Include/Exclude Filters**: Filter results by any field using various operators
+- **Field Selection**: Show only specific fields in output
+- **Multiple Output Formats**: Works with table, JSON, and YAML output
+- **Complex Expressions**: Support for regex, glob patterns, numeric comparisons
+- **Nested Field Access**: Filter on nested data using dot notation
+
+#### Quick Filtering Examples
+
+```bash
+# Show only Jenkins servers
+lftools-ng projects servers --include 'type=jenkins'
+
+# Exclude test/sandbox environments
+lftools-ng projects servers --exclude 'name~=test' --exclude 'name~=sandbox'
+
+# Show specific fields only
+lftools-ng projects list --fields 'name,source,github_mirror_org'
+
+# Complex filtering with multiple conditions
+lftools-ng projects servers --include 'type=jenkins' --include 'location~=virginia' --fields 'name,url'
+
+# Find projects with GitHub mirrors
+lftools-ng projects list --exclude 'github_mirror_org:empty'
+```
+
+See [docs/filtering.md](docs/filtering.md) for complete filtering documentation.
+
 ### Jenkins Integration
 
 - **Credential Extraction**: Export Jenkins credentials, secrets, and SSH
@@ -364,3 +396,68 @@ This project uses the Apache License 2.0. See the
   by the Linux Foundation
 - Built with [Typer](https://typer.tiangolo.com/) for CLI framework
 - Uses [Rich](https://rich.readthedocs.io/) for beautiful terminal output
+
+## 🚨 **CRITICAL**: Developer Requirements for New Commands
+
+### Universal Filtering System Implementation
+
+**ALL new CLI commands that return data MUST implement the universal filtering system.**
+This is a **non-negotiable requirement** and a **primary feature** of lftools-ng.
+
+#### Required Implementation Steps
+
+When adding a new CLI command that returns tabular data, you **MUST**:
+
+1. **Include filtering parameters** in your command function:
+
+   ```python
+   include: Optional[List[str]] = typer.Option(None, "--include", "-i", help="Include filters"),
+   exclude: Optional[List[str]] = typer.Option(None, "--exclude", "-e", help="Exclude filters"),
+   fields: Optional[str] = typer.Option(None, "--fields", help="Fields to include"),
+   exclude_fields: Optional[str] = typer.Option(None, "--exclude-fields", help="Fields to exclude")
+   ```
+
+2. **Use the standard output system**:
+
+   ```python
+   from lftools_ng.core.output import format_and_output, create_filter_from_options
+
+   data_filter = create_filter_from_options(include, exclude, fields, exclude_fields)
+   format_and_output(data, output_format, data_filter, table_config)
+   ```
+
+3. **Add comprehensive tests** in `tests/integration/test_universal_filtering.py`
+
+4. **Update filtering requirements tests** to include your new command
+
+5. **Include filtering examples** in your command's help text
+
+#### Implementation Template
+
+See `src/lftools_ng/core/filtering_guidelines.py` for a complete implementation template.
+
+#### Testing Requirements
+
+- **Integration tests**: Add to `tests/integration/test_universal_filtering.py`
+- **Requirements tests**: Update `TestFilteringSystemRequirements` class
+- **All output formats**: Verify table, JSON, and YAML output work with filtering
+- **Error handling**: Test invalid filter expressions
+
+#### Documentation Requirements
+
+- **Command help**: Include filtering examples in docstrings
+- **README examples**: Add your command's filtering examples to this README
+- **Filter documentation**: Update `docs/filtering.md` if adding new field types
+
+### ⚠️ Pull Request Requirements
+
+**Pull requests adding data-returning commands will be REJECTED if they do not properly implement filtering.**
+
+The universal filtering system ensures:
+
+- **Consistent user experience** across all commands
+- **Powerful data manipulation** capabilities
+- **Programmatic integration** through JSON output
+- **Future-proofing** as the codebase grows
+
+See [docs/filtering.md](docs/filtering.md) for complete implementation details.
