@@ -10,7 +10,7 @@ servers:
   - name: "jenkins.onap.org"
     url: "https://jenkins.onap.org"
     type: "jenkins"
-    vpn_address: "100.64.1.10"
+    vpn_address: "100.80.168.22"
     location: "vexxhost"
     github_mirror_org: null
     is_production: true
