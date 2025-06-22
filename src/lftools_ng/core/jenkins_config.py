@@ -140,9 +140,22 @@ class JenkinsConfigReader:
         """
         configs = self.get_jenkins_configs(config_path)
 
+        # Normalize the input URL for comparison
+        normalized_url = url.rstrip('/').lower()
+
         for config in configs.values():
-            if config.url == url or config.url.rstrip('/') == url.rstrip('/'):
+            # Normalize config URL for comparison
+            config_normalized = config.url.rstrip('/').lower()
+
+            # Try exact match first
+            if config_normalized == normalized_url:
                 return config
+
+            # Try matching base domain (for cases like jenkins.example.org vs jenkins.example.org/subpath)
+            if normalized_url in config_normalized or config_normalized in normalized_url:
+                # Make sure it's a reasonable match (not just random substring)
+                if config_normalized.startswith(normalized_url) or normalized_url.startswith(config_normalized):
+                    return config
 
         return None
 
