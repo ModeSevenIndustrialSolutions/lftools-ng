@@ -100,11 +100,15 @@ addopts = [
     "--cov-report=html:htmlcov",
     "--cov-report=xml:coverage.xml",
     "--cov-fail-under=80",
+    "-m not integration",  # Skip integration tests by default
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: marks tests as integration tests that require external resources (skipped by default, run with 'pytest -m integration')",
+]
 
 [tool.coverage.run]
 source = ["src/lftools_ng"]
