@@ -4,12 +4,68 @@
 """Core Jenkins client implementation for lftools-ng."""
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import jenkins
 from jenkins import Jenkins as PythonJenkins
 
 logger = logging.getLogger(__name__)
+
+
+class JenkinsAuthenticationError(Exception):
+    """Raised when Jenkins authentication fails."""
+    pass
+
+
+class JenkinsConnectionError(Exception):
+    """Raised when Jenkins connection fails for non-auth reasons."""
+    pass
+
+
+def _detect_auth_error(error_message: str) -> bool:
+    """Detect if an error message indicates an authentication failure."""
+    auth_indicators = [
+        "401",
+        "unauthorized",
+        "authentication failed",
+        "invalid credentials",
+        "access denied",
+        "forbidden",
+        "login required"
+    ]
+    error_lower = error_message.lower()
+    return any(indicator in error_lower for indicator in auth_indicators)
+
+
+def _clean_error_message(error_message: str) -> str:
+    """Clean up error messages to remove HTML content and make them more user-friendly."""
+    # Remove HTML tags
+    clean_msg = re.sub(r'<[^>]+>', '', error_message)
+    # Remove excessive whitespace and newlines
+    clean_msg = re.sub(r'\s+', ' ', clean_msg).strip()
+
+    # Extract the main error information
+    if "401" in clean_msg and "Unauthorized" in clean_msg:
+        return "Jenkins server returned 401 Unauthorized - credentials are invalid or missing"
+    elif "403" in clean_msg and "Forbidden" in clean_msg:
+        return "Jenkins server returned 403 Forbidden - user lacks required permissions"
+    elif "404" in clean_msg:
+        return "Jenkins server endpoint not found (404) - check server URL"
+    elif "Connection" in clean_msg and ("refused" in clean_msg or "timeout" in clean_msg):
+        return "Cannot connect to Jenkins server - check server URL and network connectivity"
+
+    # For other errors, truncate if too long but preserve key information
+    if len(clean_msg) > 150:
+        # Try to find the most important part
+        if "Error" in clean_msg:
+            # Extract error message up to first occurrence of technical details
+            error_part = clean_msg.split("Error")[-1].split("HTTP")[0].split("URI:")[0].strip()
+            if error_part and len(error_part) < 100:
+                return f"Error{error_part}"
+        clean_msg = clean_msg[:150] + "..."
+
+    return clean_msg
 
 
 class JenkinsClient:
@@ -45,8 +101,13 @@ class JenkinsClient:
             self.client.get_version()
             logger.info(f"Connected to Jenkins server: {server}")
         except Exception as e:
-            logger.error(f"Failed to connect to Jenkins server {server}: {e}")
-            raise
+            error_msg = str(e)
+            if _detect_auth_error(error_msg):
+                clean_msg = _clean_error_message(error_msg)
+                raise JenkinsAuthenticationError(f"Authentication failed for {server}: {clean_msg}")
+            else:
+                clean_msg = _clean_error_message(error_msg)
+                raise JenkinsConnectionError(f"Failed to connect to Jenkins server {server}: {clean_msg}")
 
     def run_groovy_script(self, script: str) -> str:
         """Run a Groovy script on the Jenkins server.
@@ -65,8 +126,13 @@ class JenkinsClient:
             logger.debug("Groovy script executed successfully")
             return str(result)
         except Exception as e:
-            logger.error(f"Failed to execute Groovy script: {e}")
-            raise
+            error_msg = str(e)
+            if _detect_auth_error(error_msg):
+                clean_msg = _clean_error_message(error_msg)
+                raise JenkinsAuthenticationError(f"Authentication failed: {clean_msg}")
+            else:
+                clean_msg = _clean_error_message(error_msg)
+                raise JenkinsConnectionError(f"Failed to execute Groovy script: {clean_msg}")
 
     def get_credentials(self) -> List[Dict[str, Any]]:
         """Extract all credentials from Jenkins server.
@@ -129,6 +195,9 @@ println json.toString()
             import json
             parsed_result: list[dict[str, Any]] = json.loads(result)
             return parsed_result
+        except (JenkinsAuthenticationError, JenkinsConnectionError):
+            # Re-raise our custom exceptions without modification
+            raise
         except Exception as e:
             logger.error(f"Failed to get credentials: {e}")
             # Return fallback result for backward compatibility
@@ -234,8 +303,13 @@ println json.toString()
             version = self.client.get_version()
             return str(version)
         except Exception as e:
-            logger.error(f"Failed to get Jenkins version: {e}")
-            raise
+            error_msg = str(e)
+            if _detect_auth_error(error_msg):
+                clean_msg = _clean_error_message(error_msg)
+                raise JenkinsAuthenticationError(f"Authentication failed: {clean_msg}")
+            else:
+                clean_msg = _clean_error_message(error_msg)
+                raise JenkinsConnectionError(f"Failed to get Jenkins version: {clean_msg}")
 
     def get_info(self) -> Dict[str, Any]:
         """Get Jenkins server information.

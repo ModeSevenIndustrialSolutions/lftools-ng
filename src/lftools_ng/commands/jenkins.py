@@ -17,7 +17,7 @@ from rich.console import Console
 
 from lftools_ng.core.credential_manager import CredentialFilter, CredentialManager, CredentialType, Credential
 from lftools_ng.core.jenkins_provider import JenkinsCredentialProvider
-from lftools_ng.core.jenkins import JenkinsClient  # For backwards compatibility with tests
+from lftools_ng.core.jenkins import JenkinsClient, JenkinsAuthenticationError, JenkinsConnectionError  # For backwards compatibility with tests
 from lftools_ng.core.jenkins_config import JenkinsConfigReader, JenkinsConfig
 from lftools_ng.core.output import format_and_output, create_filter_from_options
 
@@ -87,6 +87,13 @@ def get_jenkins_credentials(
         # Search standard locations
         if server:
             jenkins_config = config_reader.get_config_by_url(server)
+            if not jenkins_config:
+                # Log what we tried to match
+                available_servers = config_reader.list_available_servers()
+                if available_servers:
+                    logger.debug(f"Failed to find config for server '{server}'. Available servers:")
+                    for section_name, url in available_servers:
+                        logger.debug(f"  - {section_name}: {url}")
         else:
             configs = config_reader.get_jenkins_configs()
             if configs:
@@ -117,11 +124,17 @@ def get_jenkins_credentials(
         console.print("2. Specify config file with --config-file option")
         console.print("3. Provide --server, --user, and --password via command line")
 
-        if config_reader.get_standard_config_paths():
+        available_paths = config_reader.get_standard_config_paths()
+        if available_paths:
             console.print("\n[cyan]Available servers in config files:[/cyan]")
             servers = config_reader.list_available_servers()
             for section_name, url in servers:
                 console.print(f"  - {section_name}: {url}")
+
+            # If server was provided but not found, give specific help
+            if server and not any(url == server or url.rstrip('/') == server.rstrip('/') for _, url in servers):
+                console.print(f"\n[yellow]Note: Server '{server}' not found in config files.[/yellow]")
+                console.print("[yellow]Available servers listed above, or use exact URL from config.[/yellow]")
 
         raise typer.Exit(1)
 
@@ -300,7 +313,16 @@ def get_unified_credentials(
             credential_filter.tags = set(tags)
 
         # Get credentials
-        credentials = manager.list_credentials("jenkins", credential_filter)
+        try:
+            credentials = manager.list_credentials("jenkins", credential_filter)
+        except JenkinsAuthenticationError as e:
+            console.print(f"[red]Authentication failed: {e}[/red]")
+            console.print("\n[yellow]Please check your credentials in jenkins_jobs.ini or provide them via command line:[/yellow]")
+            console.print("  --server <url> --user <username> --password <token>")
+            return  # Exit gracefully without typer.Exit
+        except JenkinsConnectionError as e:
+            console.print(f"[red]Connection failed: {e}[/red]")
+            return  # Exit gracefully without typer.Exit
 
         # Apply additional post-processing filters for classification metadata
         # (since CredentialFilter might not support all these yet)
@@ -740,7 +762,16 @@ def analyze_credentials(
 
         # Get all credentials with classification
         console.print("[cyan]Analyzing Jenkins credentials...[/cyan]")
-        credentials = manager.list_credentials("jenkins")
+        try:
+            credentials = manager.list_credentials("jenkins")
+        except JenkinsAuthenticationError as e:
+            console.print(f"[red]Authentication failed: {e}[/red]")
+            console.print("\n[yellow]Please check your credentials in jenkins_jobs.ini or provide them via command line:[/yellow]")
+            console.print("  --server <url> --user <username> --password <token>")
+            return  # Exit gracefully without typer.Exit
+        except JenkinsConnectionError as e:
+            console.print(f"[red]Connection failed: {e}[/red]")
+            return  # Exit gracefully without typer.Exit
 
         if not credentials:
             console.print("[yellow]No credentials found on Jenkins server[/yellow]")
@@ -899,7 +930,7 @@ def analyze_credentials(
 
     except Exception as e:
         logger.error(f"Analysis failed: {e}")
-        console.print(f"[red]Analysis failed: {e}[/red]")
+        console.print(f"[red]Unexpected error during analysis: {e}[/red]")
         raise typer.Exit(1)
 
 
@@ -1019,4 +1050,146 @@ def run_groovy_script(
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@jenkins_app.command("versions")
+def check_versions(
+    config_file: Optional[Path] = typer.Option(
+        None, "--config-file", "-c",
+        help=JENKINS_CONFIG_HELP
+    ),
+    output_format: str = typer.Option("table", "--format", "-f", help=JENKINS_OUTPUT_FORMAT_HELP),
+    timeout: int = typer.Option(3, "--timeout", "-t", help="Connection timeout in seconds (default: 3)"),
+) -> None:
+    """Checks each server in a jenkins_jobs.ini file, returns the remote Jenkins version.
+
+    This command checks all Jenkins servers configured in jenkins_jobs.ini files and retrieves
+    their versions using authenticated API calls. It uses the default search paths for the config
+    file, or allows the path to the configuration file to be explicitly specified.
+
+    Examples:
+        # Check versions for all configured Jenkins servers
+        lftools-ng jenkins versions
+
+        # Check versions using specific config file
+        lftools-ng jenkins versions --config-file /path/to/jenkins_jobs.ini
+
+        # Output as JSON
+        lftools-ng jenkins versions --format json
+
+        # Use a longer timeout for slow servers
+        lftools-ng jenkins versions --timeout 30
+    """
+    try:
+        console.print("[bold blue]Jenkins Server Version Check[/bold blue]\n")
+
+        config_reader = JenkinsConfigReader()
+
+        # Get all Jenkins configurations
+        jenkins_configs = config_reader.get_jenkins_configs(config_file)
+
+        if not jenkins_configs:
+            if config_file:
+                console.print(f"[red]No Jenkins configurations found in {config_file}[/red]")
+            else:
+                console.print("[red]No jenkins_jobs.ini files found in standard locations[/red]")
+                console.print("[yellow]Standard locations checked:[/yellow]")
+                console.print("  - Current directory: ./jenkins_jobs.ini")
+                console.print("  - User config: ~/.config/jenkins_jobs/jenkins_jobs.ini")
+                console.print("\n[yellow]Create a jenkins_jobs.ini file or specify one with --config-file[/yellow]")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Found {len(jenkins_configs)} Jenkins servers to check[/green]\n")
+
+        # Check versions for each server
+        results: List[Dict[str, Any]] = []
+        for section_name, config in jenkins_configs.items():
+            console.print(f"Checking {section_name} ({config.url})...")
+
+            try:
+                # Create Jenkins client with authentication and configurable timeout
+                client = JenkinsClient(config.url, config.user, config.password, timeout=timeout)
+
+                # Get version (this requires authentication)
+                version = client.get_version()
+
+                result: Dict[str, Any] = {
+                    "server_name": section_name,
+                    "url": config.url,
+                    "version": version,
+                    "status": "success",
+                    "error": ""
+                }
+
+                console.print(f"  [green]✓[/green] Version: {version}")
+
+            except JenkinsAuthenticationError as e:
+                error_msg = f"Authentication failed: {str(e)}"
+                result = {
+                    "server_name": section_name,
+                    "url": config.url,
+                    "version": "",
+                    "status": "failed",
+                    "error": error_msg
+                }
+                console.print(f"  [red]✗[/red] {error_msg}")
+
+            except JenkinsConnectionError as e:
+                error_msg = f"Connection failed: {str(e)}"
+                result = {
+                    "server_name": section_name,
+                    "url": config.url,
+                    "version": "",
+                    "status": "failed",
+                    "error": error_msg
+                }
+                console.print(f"  [red]✗[/red] {error_msg}")
+
+            except Exception as e:
+                error_msg = f"Unexpected error: {str(e)}"
+                result = {
+                    "server_name": section_name,
+                    "url": config.url,
+                    "version": "",
+                    "status": "failed",
+                    "error": error_msg
+                }
+
+                console.print(f"  [red]✗[/red] {error_msg}")
+
+            results.append(result)
+
+        # Display results in requested format
+        if results:
+            console.print()
+
+            if output_format == "table":
+                table_config: Dict[str, Any] = {
+                    "title": "Jenkins Server Versions",
+                    "columns": [
+                        {"name": "Server", "field": "server_name", "style": "cyan"},
+                        {"name": "URL", "field": "url", "style": "blue"},
+                        {"name": "Version", "field": "version", "style": "green"},
+                        {"name": "Status", "field": "status", "style": "yellow"},
+                        {"name": "Error", "field": "error", "style": "red"},
+                    ]
+                }
+                format_and_output(results, output_format, None, table_config)
+            else:
+                # For JSON/YAML output, use standard formatter
+                format_and_output(results, output_format, None, None)
+
+            # Show summary
+            success_count = sum(1 for r in results if r["status"] == "success")
+            failure_count = len(results) - success_count
+
+            console.print("\n[bold]Summary:[/bold]")
+            console.print(f"[green]Successful: {success_count}[/green]")
+            if failure_count > 0:
+                console.print(f"[red]Failed: {failure_count}[/red]")
+
+    except Exception as e:
+        logger.error(f"Version check failed: {e}")
+        console.print(f"[red]Version check failed: {e}[/red]")
         raise typer.Exit(1)

@@ -19,7 +19,7 @@ from .credential_manager import (
     CredentialType,
 )
 from .credential_classifier import CredentialClassifier
-from .jenkins import JenkinsClient
+from .jenkins import JenkinsClient, JenkinsAuthenticationError, JenkinsConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,9 @@ class JenkinsCredentialProvider(CredentialProvider):
             logger.info(f"Retrieved {len(credentials)} credentials from Jenkins")
             return credentials
 
+        except (JenkinsAuthenticationError, JenkinsConnectionError):
+            # Re-raise authentication and connection errors without modification
+            raise
         except Exception as e:
             logger.error(f"Failed to list Jenkins credentials: {e}")
             return []
