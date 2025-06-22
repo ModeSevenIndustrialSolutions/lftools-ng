@@ -19,6 +19,15 @@ projects_app = typer.Typer(
     help="Project management operations",
     no_args_is_help=True,
 )
+
+# Create servers subcommand group
+servers_app = typer.Typer(
+    name="servers",
+    help="Server management and connectivity testing",
+    no_args_is_help=True,
+)
+projects_app.add_typer(servers_app, name="servers")
+
 console = Console()
 
 # Constants for configuration
@@ -153,7 +162,7 @@ def _get_aliases_string(project: Dict[str, Any]) -> str:
     return aliases_str if aliases_str else "None"
 
 
-@projects_app.command("servers")
+@servers_app.command("list")
 def list_servers(
     config_dir: Optional[str] = typer.Option(
         None, "--config-dir", "-c", help=CONFIG_DIR_HELP
@@ -191,19 +200,27 @@ def list_servers(
         manager = ProjectManager(config_path)
         servers = manager.list_servers()
 
+        # Enhance servers with project display field
+        for server in servers:
+            projects_list = server.get("projects", [])
+            if projects_list:
+                # Use the first project as the primary project for display
+                server["project"] = projects_list[0] if len(projects_list) == 1 else f"{projects_list[0]} (+{len(projects_list)-1})"
+            else:
+                server["project"] = "None"
+
         # Create filter from options
         data_filter = create_filter_from_options(include, exclude, fields, exclude_fields)
 
-        # Configure table output
+        # Configure table output with new column layout
         table_config = {
             "title": "Registered Servers",
             "columns": [
-                {"name": "Server", "field": "name", "style": "cyan"},
-                {"name": "Type", "field": "type", "style": "blue"},
-                {"name": "URL", "field": "url", "style": "magenta"},
-                {"name": "Location", "field": "location", "style": "yellow"},
                 {"name": "VPN Address", "field": "vpn_address", "style": "green"},
-                {"name": "Projects", "field": "project_count", "style": "white", "format": "count"}
+                {"name": "Location", "field": "location", "style": "yellow"},
+                {"name": "Type", "field": "type", "style": "blue"},
+                {"name": "Project", "field": "project", "style": "cyan"},
+                {"name": "URL", "field": "url", "style": "magenta"}
             ]
         }
 
@@ -447,6 +464,156 @@ def rebuild_servers_database(
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@servers_app.command("connectivity")
+def test_connectivity(
+    config_dir: Optional[str] = typer.Option(
+        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
+    ),
+    timeout: int = typer.Option(
+        3, "--timeout", "-t", help="Timeout in seconds for connectivity tests"
+    ),
+    username: Optional[str] = typer.Option(
+        None, "--username", "-u", help="SSH username to test (if not specified, tries common usernames)"
+    ),
+    include: Optional[List[str]] = typer.Option(
+        None, "--include", "-i",
+        help="Include filters to test only specific servers"
+    ),
+    exclude: Optional[List[str]] = typer.Option(
+        None, "--exclude", "-e",
+        help="Exclude filters to skip specific servers"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed SSH test information"
+    ),
+) -> None:
+    """Test connectivity to all registered servers using local SSH configuration.
+
+    Tests three types of connectivity:
+    1. HTTP/HTTPS URL accessibility (public internet)
+    2. SSH port (TCP/22) connectivity via VPN address
+    3. SSH shell access using local SSH config, keys, and authentication methods
+
+    SSH Authentication Methods Supported:
+    - SSH Agent (ssh-agent)
+    - SSH keys from ~/.ssh/
+    - Hardware tokens (YubiKey, etc.)
+    - Secure enclave keys (Secretive, 1Password, etc.)
+    - SSH config file settings (~/.ssh/config)
+
+    Results are color-coded:
+    - Green (✓): Success
+    - Red (✗): Failure
+    - Yellow (⚠): SSH service responding but authentication failed
+    - Yellow (⏱): Timeout
+    """
+    try:
+        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
+        manager = ProjectManager(config_path)
+        servers = manager.list_servers()
+
+        # Filter servers if specified
+        if include or exclude:
+            data_filter = create_filter_from_options(include, exclude, None, None)
+            if data_filter:
+                servers = data_filter.filter_data(servers)
+
+        if not servers:
+            console.print("[yellow]No servers to test[/yellow]")
+            return
+
+        # Show test configuration
+        config_info = f"[cyan]Testing connectivity to {len(servers)} servers (timeout: {timeout}s)[/cyan]"
+        if username:
+            config_info += f"\n[cyan]SSH username: {username}[/cyan]"
+        else:
+            config_info += "\n[cyan]SSH usernames: auto-detect (SSH config, current user, common usernames)[/cyan]"
+
+        if verbose:
+            config_info += "\n[cyan]Using local SSH config and authentication methods[/cyan]"
+
+        console.print(config_info + "\n")
+
+        from lftools_ng.core.connectivity import ConnectivityTester
+        tester = ConnectivityTester(timeout=timeout)
+
+        table = Table(title="Server Connectivity Test Results")
+        table.add_column("Server", style="cyan", no_wrap=True)
+        table.add_column("URL Test", justify="center")
+        table.add_column("SSH Port", justify="center")
+        table.add_column("SSH Shell", justify="center")
+        if verbose:
+            table.add_column("Details", style="dim")
+        table.add_column("VPN Address", style="dim")
+
+        for server in servers:
+            server_name = server.get("name", "Unknown")
+            server_url = server.get("url", "")
+            vpn_address = server.get("vpn_address", "")
+
+            # Test URL accessibility
+            url_result = tester.test_url(server_url) if server_url else "N/A"
+
+            # Test SSH port connectivity
+            ssh_port_result = tester.test_ssh_port(vpn_address) if vpn_address else "N/A"
+
+            # Test SSH shell access with specified or auto-detected username
+            if vpn_address:
+                ssh_shell_result = tester.test_ssh_shell(vpn_address, username=username, verbose=verbose)
+            else:
+                ssh_shell_result = "N/A"
+
+            row_data = [
+                server_name,
+                url_result,
+                ssh_port_result,
+                ssh_shell_result,
+            ]
+
+            if verbose:
+                # Add details about the test results and SSH details
+                details = []
+                if server_url and url_result != "N/A":
+                    details.append(f"URL: {server_url}")
+                if vpn_address:
+                    details.append(f"SSH: {vpn_address}:22")
+
+                    # Get SSH-specific details if available
+                    ssh_details = tester.get_last_ssh_details()
+                    if ssh_details:
+                        if ssh_details.get("successful_username"):
+                            details.append(f"User: {ssh_details['successful_username']}")
+                        elif ssh_details.get("attempted_usernames"):
+                            attempted = ", ".join(ssh_details["attempted_usernames"][:3])  # Limit to first 3
+                            if len(ssh_details["attempted_usernames"]) > 3:
+                                attempted += "..."
+                            details.append(f"Tried: {attempted}")
+
+                        if ssh_details.get("auth_methods_tried"):
+                            auth_methods = ", ".join(set(ssh_details["auth_methods_tried"]))
+                            details.append(f"Auth: {auth_methods}")
+
+                details_str = " | ".join(details) if details else "No details"
+                row_data.append(details_str)
+
+            row_data.append(vpn_address or "None")
+            table.add_row(*row_data)
+
+        console.print(table)
+
+        # Show legend for result symbols
+        console.print("\n[bold]Legend:[/bold]")
+        console.print("  [green]✓[/green] Success")
+        console.print("  [red]✗[/red] Failure")
+        console.print("  [yellow]⚠[/yellow] SSH service responding, authentication failed")
+        console.print("  [yellow]⏱[/yellow] Timeout")
+        console.print("  [dim]N/A[/dim] Test not applicable")
+
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)

@@ -34,7 +34,14 @@ def format_and_output(
     """
     # Apply filtering if provided
     if data_filter:
+        # Check if field filtering is being applied
+        has_field_filter = hasattr(data_filter, 'field_filters') and data_filter.field_filters
+
         data = data_filter.filter_data(data)
+
+        # If field filtering was applied and we have table config, adjust the columns
+        if has_field_filter and table_config and output_format == "table":
+            table_config = _adjust_table_config_for_field_filter(table_config, data_filter.field_filters)
 
     if output_format == "json":
         print(json.dumps(data, separators=(',', ':')), file=sys.stdout)
@@ -46,6 +53,48 @@ def format_and_output(
         _output_table(data, table_config or {})
     else:
         raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def _adjust_table_config_for_field_filter(
+    table_config: Dict[str, Any],
+    field_filters: List[str]
+) -> Dict[str, Any]:
+    """Adjust table configuration to match field filters.
+
+    Args:
+        table_config: Original table configuration
+        field_filters: List of fields to include
+
+    Returns:
+        Adjusted table configuration
+    """
+    if not field_filters or "columns" not in table_config:
+        return table_config
+
+    # Create a mapping from field names to column configs
+    field_to_column = {}
+    for col in table_config.get("columns", []):
+        if isinstance(col, dict):
+            field_name = col.get("field", col.get("name", ""))
+            if field_name:
+                field_to_column[field_name] = col
+
+    # Build new columns list based on field filters
+    new_columns = []
+    for field in field_filters:
+        if field in field_to_column:
+            new_columns.append(field_to_column[field])
+        else:
+            # Create a basic column config for fields not in original config
+            new_columns.append({
+                "name": field.replace('_', ' ').title(),
+                "field": field
+            })
+
+    # Return adjusted config
+    adjusted_config = table_config.copy()
+    adjusted_config["columns"] = new_columns
+    return adjusted_config
 
 
 def _output_table(data: List[Dict[str, Any]], config: Dict[str, Any]) -> None:
