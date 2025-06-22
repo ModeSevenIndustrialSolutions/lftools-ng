@@ -9,6 +9,7 @@ unified credential management architecture.
 """
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
@@ -17,6 +18,7 @@ from rich.console import Console
 from lftools_ng.core.credential_manager import CredentialFilter, CredentialManager, CredentialType, Credential
 from lftools_ng.core.jenkins_provider import JenkinsCredentialProvider
 from lftools_ng.core.jenkins import JenkinsClient  # For backwards compatibility with tests
+from lftools_ng.core.jenkins_config import JenkinsConfigReader, JenkinsConfig
 from lftools_ng.core.output import format_and_output, create_filter_from_options
 
 # Constants
@@ -24,6 +26,12 @@ JENKINS_SERVER_HELP = "Jenkins server URL"
 JENKINS_USER_HELP = "Jenkins username"
 JENKINS_PASSWORD_HELP = "Jenkins password or API token"
 JENKINS_OUTPUT_FORMAT_HELP = "Output format: table, json, yaml, csv"
+JENKINS_CONFIG_HELP = "Path to jenkins_jobs.ini configuration file"
+
+# Environment variable names
+JENKINS_SERVER_ENV = "JENKINS_URL"
+JENKINS_USER_ENV = "JENKINS_USER"
+JENKINS_PASSWORD_ENV = "JENKINS_PASSWORD"
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -32,11 +40,115 @@ console = Console()
 jenkins_app = typer.Typer(help="Jenkins server operations with unified credential management")
 
 
+def get_jenkins_credentials(
+    server: Optional[str] = None,
+    user: Optional[str] = None,
+    password: Optional[str] = None,
+    config_file: Optional[Path] = None
+) -> tuple[str, str, str]:
+    """
+    Get Jenkins credentials from config file or command line arguments.
+
+    Priority order:
+    1. Command line arguments (if all provided)
+    2. jenkins_jobs.ini from specified config file path
+    3. jenkins_jobs.ini from current directory
+    4. jenkins_jobs.ini from ~/.config/jenkins_jobs/
+
+    Args:
+        server: Jenkins server URL from command line
+        user: Jenkins username from command line
+        password: Jenkins password from command line
+        config_file: Optional path to jenkins_jobs.ini file
+
+    Returns:
+        Tuple of (server_url, username, password)
+
+    Raises:
+        typer.Exit: If credentials cannot be found or are incomplete
+    """
+    config_reader = JenkinsConfigReader()
+
+    # If all command line arguments provided, use them
+    if server and user and password:
+        return server, user, password
+
+    # Try to get credentials from config file
+    jenkins_config: Optional[JenkinsConfig] = None
+
+    if config_file:
+        # Use specified config file
+        jenkins_config = config_reader.get_config_by_url(server, config_file) if server else None
+        if not jenkins_config:
+            configs = config_reader.get_jenkins_configs(config_file)
+            if configs:
+                jenkins_config = next(iter(configs.values()))
+    else:
+        # Search standard locations
+        if server:
+            jenkins_config = config_reader.get_config_by_url(server)
+        else:
+            configs = config_reader.get_jenkins_configs()
+            if configs:
+                jenkins_config = next(iter(configs.values()))
+
+    # Use config file credentials, with command line overrides
+    if jenkins_config:
+        final_server = server or jenkins_config.url
+        final_user = user or jenkins_config.user
+        final_password = password or jenkins_config.password
+        return final_server, final_user, final_password
+
+    # If no config found, all parameters must be provided via command line
+    missing_params = []
+    if not server:
+        missing_params.append("server")
+    if not user:
+        missing_params.append("user")
+    if not password:
+        missing_params.append("password")
+
+    if missing_params:
+        console.print(f"[red]Error: Missing required parameters: {', '.join(missing_params)}[/red]")
+        console.print("\n[yellow]Options to provide Jenkins credentials:[/yellow]")
+        console.print("1. [bold]Recommended:[/bold] Create a jenkins_jobs.ini file in:")
+        console.print("   - Current directory: ./jenkins_jobs.ini")
+        console.print("   - User config: ~/.config/jenkins_jobs/jenkins_jobs.ini")
+        console.print("2. Specify config file with --config-file option")
+        console.print("3. Provide --server, --user, and --password via command line")
+
+        if config_reader.get_standard_config_paths():
+            console.print("\n[cyan]Available servers in config files:[/cyan]")
+            servers = config_reader.list_available_servers()
+            for section_name, url in servers:
+                console.print(f"  - {section_name}: {url}")
+
+        raise typer.Exit(1)
+
+    return server, user, password  # type: ignore
+
+
 @jenkins_app.command("credentials")
 def get_unified_credentials(
-    server: str = typer.Option(..., "--server", "-s", help=JENKINS_SERVER_HELP),
-    user: str = typer.Option(..., "--user", "-u", help=JENKINS_USER_HELP),
-    password: str = typer.Option(..., "--password", "-p", help=JENKINS_PASSWORD_HELP),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s",
+        help=JENKINS_SERVER_HELP,
+        envvar=JENKINS_SERVER_ENV
+    ),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u",
+        help=JENKINS_USER_HELP,
+        envvar=JENKINS_USER_ENV
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p",
+        help=JENKINS_PASSWORD_HELP,
+        envvar=JENKINS_PASSWORD_ENV
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config-file", "-c",
+        help=JENKINS_CONFIG_HELP
+    ),
     output_format: str = typer.Option("table", "--format", "-f", help=JENKINS_OUTPUT_FORMAT_HELP),
 
     # Filtering options
@@ -125,22 +237,28 @@ def get_unified_credentials(
     filtering capabilities including type detection, security analysis, and metadata enrichment.
 
     Examples:
-        # Get all credentials
+        # Get all credentials (using jenkins_jobs.ini)
+        lftools-ng jenkins credentials
+
+        # Get all credentials with explicit server details
         lftools-ng jenkins credentials --server https://jenkins.example.com --user admin --password token
 
         # Get only SSH private keys
-        lftools-ng jenkins credentials --server https://jenkins.example.com --user admin --password token --type ssh_private_key
+        lftools-ng jenkins credentials --type ssh_private_key
 
         # Get only credentials with 'nexus' in the name
-        lftools-ng jenkins credentials --server https://jenkins.example.com --user admin --password token --name-pattern "*nexus*"
+        lftools-ng jenkins credentials --name-pattern "*nexus*"
 
         # Get deploy credentials with usernames
-        lftools-ng jenkins credentials --server https://jenkins.example.com --user admin --password token --tag deploy --has-username true
+        lftools-ng jenkins credentials --tag deploy --has-username true
 
         # Get all credentials except test ones
-        lftools-ng jenkins credentials --server https://jenkins.example.com --user admin --password token --exclude "name~=test"
+        lftools-ng jenkins credentials --exclude "name~=test"
     """
     try:
+        # Get Jenkins credentials from config or command line
+        server, user, password = get_jenkins_credentials(server, user, password, config_file)
+
         # Initialize credential manager
         manager = CredentialManager()
 
@@ -319,9 +437,25 @@ def get_unified_credentials(
 
 @jenkins_app.command("migrate")
 def migrate_credentials(
-    source_server: str = typer.Option(..., "--source-server", "-s", help="Source Jenkins server URL"),
-    source_user: str = typer.Option(..., "--source-user", "-u", help="Source Jenkins username"),
-    source_password: str = typer.Option(..., "--source-password", "-p", help="Source Jenkins password or API token"),
+    source_server: Optional[str] = typer.Option(
+        None, "--source-server", "-s",
+        help="Source Jenkins server URL",
+        envvar=JENKINS_SERVER_ENV
+    ),
+    source_user: Optional[str] = typer.Option(
+        None, "--source-user", "-u",
+        help="Source Jenkins username",
+        envvar=JENKINS_USER_ENV
+    ),
+    source_password: Optional[str] = typer.Option(
+        None, "--source-password", "-p",
+        help="Source Jenkins password or API token",
+        envvar=JENKINS_PASSWORD_ENV
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config-file", "-c",
+        help=JENKINS_CONFIG_HELP
+    ),
 
     # Target platform options
     target_platform: str = typer.Option(..., "--target", "-t", help="Target platform: github, gitlab, 1password, pass"),
@@ -370,6 +504,11 @@ def migrate_credentials(
     """
     try:
         console.print("[bold blue]Jenkins Credential Migration Tool[/bold blue]\n")
+
+        # Get Jenkins credentials from config or command line
+        source_server, source_user, source_password = get_jenkins_credentials(
+            source_server, source_user, source_password, config_file
+        )
 
         # Initialize credential manager
         manager = CredentialManager()
@@ -547,9 +686,25 @@ def _transform_credential_names(credentials: List[Credential], transformation: s
 
 @jenkins_app.command("analyze")
 def analyze_credentials(
-    server: str = typer.Option(..., "--server", "-s", help=JENKINS_SERVER_HELP),
-    user: str = typer.Option(..., "--user", "-u", help=JENKINS_USER_HELP),
-    password: str = typer.Option(..., "--password", "-p", help=JENKINS_PASSWORD_HELP),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s",
+        help=JENKINS_SERVER_HELP,
+        envvar=JENKINS_SERVER_ENV
+    ),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u",
+        help=JENKINS_USER_HELP,
+        envvar=JENKINS_USER_ENV
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p",
+        help=JENKINS_PASSWORD_HELP,
+        envvar=JENKINS_PASSWORD_ENV
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config-file", "-c",
+        help=JENKINS_CONFIG_HELP
+    ),
     output_format: str = typer.Option("table", "--format", "-f", help=JENKINS_OUTPUT_FORMAT_HELP),
 
     # Analysis options
@@ -572,6 +727,9 @@ def analyze_credentials(
     """
     try:
         console.print("[bold blue]Jenkins Credential Security Analysis[/bold blue]\n")
+
+        # Get Jenkins credentials from config or command line
+        server, user, password = get_jenkins_credentials(server, user, password, config_file)
 
         # Initialize credential manager
         manager = CredentialManager()
@@ -805,4 +963,60 @@ def check_platforms() -> None:
     except Exception as e:
         logger.error(f"Platform check failed: {e}")
         console.print(f"[red]Platform check failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@jenkins_app.command("groovy")
+def run_groovy_script(
+    script_file: str = typer.Argument(..., help="Path to Groovy script file"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s",
+        help=JENKINS_SERVER_HELP,
+        envvar=JENKINS_SERVER_ENV
+    ),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u",
+        help=JENKINS_USER_HELP,
+        envvar=JENKINS_USER_ENV
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p",
+        help=JENKINS_PASSWORD_HELP,
+        envvar=JENKINS_PASSWORD_ENV
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config-file", "-c",
+        help=JENKINS_CONFIG_HELP
+    ),
+) -> None:
+    """Run a Groovy script on Jenkins server.
+
+    This command executes Groovy scripts on the Jenkins server, which is essential
+    for credential extraction and management operations.
+
+    Examples:
+        # Run a simple script
+        lftools-ng jenkins groovy script.groovy --server https://jenkins.example.com --user admin --password token
+    """
+    try:
+        # Get Jenkins credentials from config or command line
+        server, user, password = get_jenkins_credentials(server, user, password, config_file)
+
+        # Read script file
+        from pathlib import Path
+        script_path = Path(script_file)
+        if not script_path.exists():
+            console.print(f"[red]Error: Script file not found: {script_file}[/red]")
+            raise typer.Exit(1)
+
+        script_content = script_path.read_text()
+
+        # Use the JenkinsClient to run the script
+        client = JenkinsClient(server, user, password)
+        result = client.run_groovy_script(script_content)
+
+        console.print(result)
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)

@@ -44,7 +44,7 @@ class TestCLI:
         assert "Project" in result.output
         assert "Aliases" in result.output
 
-    @patch("lftools_ng.commands.jenkins.JenkinsClient")
+    @patch("lftools_ng.core.jenkins_provider.JenkinsClient")
     def test_jenkins_subcommand(self, mock_jenkins_client_class: Mock) -> None:
         """Test jenkins subcommand integration."""
         mock_client = Mock()

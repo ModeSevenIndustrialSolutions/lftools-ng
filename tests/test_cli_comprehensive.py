@@ -130,18 +130,24 @@ class TestCLIComprehensive:
 
     def test_jenkins_credentials_error_handling(self) -> None:
         """Test jenkins credentials shows helpful error for missing required params."""
-        result = self.runner.invoke(app, ["jenkins", "credentials"])
+        # Mock to prevent finding real config files
+        with patch(
+            "lftools_ng.core.jenkins_config.JenkinsConfigReader.get_jenkins_configs"
+        ) as mock_configs:
+            mock_configs.return_value = {}  # No configs found
 
-        # Should show helpful error, not empty error box
-        assert result.exit_code != 0  # Should fail
+            result = self.runner.invoke(app, ["jenkins", "credentials"])
 
-        if "╭─ Error ─" in result.output:
-            # If there's an error box, it should contain helpful content
-            assert len(result.output.strip()) > 50, "Error message should be informative"
-            # Should mention something about required parameters
-            assert any(
-                word in result.output.lower() for word in ["server", "required", "missing"]
-            ), "Error should mention missing required parameters"
+            # Should show helpful error, not empty error box
+            assert result.exit_code != 0  # Should fail
+
+            if "╭─ Error ─" in result.output:
+                # If there's an error box, it should contain helpful content
+                assert len(result.output.strip()) > 50, "Error message should be informative"
+                # Should mention something about required parameters
+                assert any(
+                    word in result.output.lower() for word in ["server", "required", "missing"]
+                ), "Error should mention missing required parameters"
 
 
 # Scalable test functions for future commands
@@ -156,7 +162,7 @@ def mock_all_dependencies():
     """Mock all external dependencies for CLI testing."""
     with (
         patch("lftools_ng.commands.projects.ProjectManager") as mock_pm,
-        patch("lftools_ng.commands.jenkins.JenkinsClient") as mock_jc,
+        patch("lftools_ng.core.jenkins_provider.JenkinsClient") as mock_jc,
         patch("lftools_ng.core.projects.ProjectManager") as mock_core_pm,
     ):
         # Set up reasonable mock returns
@@ -197,7 +203,19 @@ def test_scalable_cli_integration(cli_runner, mock_all_dependencies):
         (["projects", "list"], 0),
         (["projects", "list", "--format", "json"], 0),
         (["projects", "servers"], 0),
-        (["jenkins", "credentials", "--server", "test", "--user", "test", "--password", "test"], 0),
+        (
+            [
+                "jenkins",
+                "credentials",
+                "--server",
+                "https://test",
+                "--user",
+                "test",
+                "--password",
+                "test",
+            ],
+            0,
+        ),
         (["rebuild-data", "--help"], 0),
     ]
 
@@ -225,7 +243,15 @@ def test_error_cases_provide_helpful_messages(cli_runner):
     ]
 
     for command in error_test_cases:
-        result = cli_runner.invoke(app, command)
+        # For jenkins credentials, mock to prevent finding real config files
+        if command == ["jenkins", "credentials"]:
+            with patch(
+                "lftools_ng.core.jenkins_config.JenkinsConfigReader.get_jenkins_configs"
+            ) as mock_configs:
+                mock_configs.return_value = {}  # No configs found
+                result = cli_runner.invoke(app, command)
+        else:
+            result = cli_runner.invoke(app, command)
 
         # Should fail but with helpful message
         assert result.exit_code != 0, f"Command {command} should fail but didn't"

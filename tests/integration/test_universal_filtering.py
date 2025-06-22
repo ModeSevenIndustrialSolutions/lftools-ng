@@ -100,20 +100,39 @@ class TestUniversalFilteringIntegration:
             assert "sandbox" not in item.get("name", "").lower()
             assert set(item.keys()) <= {"name", "type", "url"}
 
-    @patch("lftools_ng.commands.jenkins.JenkinsClient")
+    @patch("lftools_ng.core.jenkins_provider.JenkinsClient")
     def test_jenkins_credentials_filtering_integration(self, mock_jenkins_client: Mock) -> None:
         """Test filtering integration with Jenkins credentials command."""
         # Mock Jenkins client response
         mock_credentials = [
-            {"id": "ssh-key-1", "type": "ssh", "username": "deploy", "description": "Deploy key"},
-            {"id": "ssh-key-2", "type": "ssh", "username": "admin", "description": "Admin key"},
+            {
+                "id": "ssh-key-1",
+                "type": "ssh_private_key",
+                "username": "deploy",
+                "description": "Deploy key",
+                "private_key": "-----BEGIN RSA PRIVATE KEY-----\nfake key 1\n-----END RSA PRIVATE KEY-----",
+            },
+            {
+                "id": "ssh-key-2",
+                "type": "ssh_private_key",
+                "username": "admin",
+                "description": "Admin key",
+                "private_key": "-----BEGIN RSA PRIVATE KEY-----\nfake key 2\n-----END RSA PRIVATE KEY-----",
+            },
             {
                 "id": "password-1",
-                "type": "password",
+                "type": "username_password",
                 "username": "user",
                 "description": "User password",
+                "password": "secret123",
             },
-            {"id": "test-key", "type": "ssh", "username": "test", "description": "Test key"},
+            {
+                "id": "test-key",
+                "type": "ssh_private_key",
+                "username": "test",
+                "description": "Test key",
+                "private_key": "-----BEGIN RSA PRIVATE KEY-----\ntest key\n-----END RSA PRIVATE KEY-----",
+            },
         ]
 
         mock_client_instance = Mock()
@@ -132,16 +151,18 @@ class TestUniversalFilteringIntegration:
                 "admin",
                 "--password",
                 "token",
-                "--include",
-                "type=ssh",
+                "--type",
+                "ssh_private_key",
                 "--format",
                 "json",
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        # Parse only the JSON part (before the summary)
+        json_output = result.output.split("\n\nFound")[0]
+        data = json.loads(json_output)
         for item in data:
-            assert item.get("type") == "ssh"
+            assert item.get("type") == "ssh_private_key"
 
         # Test exclude filtering
         result = self.runner.invoke(
@@ -162,7 +183,8 @@ class TestUniversalFilteringIntegration:
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        json_output = result.output.split("\n\nFound")[0]
+        data = json.loads(json_output)
         for item in data:
             assert "test" not in item.get("id", "").lower()
 
@@ -185,7 +207,8 @@ class TestUniversalFilteringIntegration:
             ],
         )
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        json_output = result.output.split("\n\nFound")[0]
+        data = json.loads(json_output)
         for item in data:
             assert set(item.keys()) <= {"id", "type"}
 
@@ -318,8 +341,6 @@ class TestFilteringSystemRequirements:
             ["projects", "list", "--help"],
             ["projects", "servers", "--help"],
             ["jenkins", "credentials", "--help"],
-            ["jenkins", "secrets", "--help"],
-            ["jenkins", "private-keys", "--help"],
         ]
 
         required_options = ["--include", "--exclude", "--fields", "--exclude-fields"]
