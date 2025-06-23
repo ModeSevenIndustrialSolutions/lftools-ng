@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 # Runs on a new pull request, performs build and runs tests
-name: "Python Project"
+name: "Build/Test Python Project"
 
 # yamllint disable-line rule:truthy
 on:

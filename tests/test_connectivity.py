@@ -5,7 +5,12 @@
 
 from unittest.mock import MagicMock, patch
 
-from lftools_ng.core.connectivity import RESULT_FAILURE, RESULT_SUCCESS, ConnectivityTester
+from lftools_ng.core.connectivity import (
+    RESULT_CLOUDFLARE_CDN,
+    RESULT_FAILURE,
+    RESULT_SUCCESS,
+    ConnectivityTester,
+)
 
 
 class TestConnectivityTester:
@@ -119,6 +124,65 @@ class TestConnectivityTester:
         tester = ConnectivityTester()
         result = tester.test_ssh_shell("")
         assert "N/A" in result
+
+    @patch("lftools_ng.core.connectivity.httpx.Client")
+    def test_url_cloudflare_403(self, mock_client):
+        """Test URL test with Cloudflare CDN 403 error."""
+        # Mock the HTTP response
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_client.return_value.__enter__.return_value.head.return_value = mock_response
+
+        tester = ConnectivityTester()
+
+        # Mock the Cloudflare detection to return True
+        with patch.object(tester, "_is_cloudflare_cdn_blocking", return_value=True):
+            result = tester.test_url("https://example.com")
+            assert result == RESULT_CLOUDFLARE_CDN
+
+    @patch("lftools_ng.core.connectivity.httpx.Client")
+    def test_url_non_cloudflare_403(self, mock_client):
+        """Test URL test with non-Cloudflare 403 error."""
+        # Mock the HTTP response
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_client.return_value.__enter__.return_value.head.return_value = mock_response
+
+        tester = ConnectivityTester()
+
+        # Mock the Cloudflare detection to return False
+        with patch.object(tester, "_is_cloudflare_cdn_blocking", return_value=False):
+            result = tester.test_url("https://example.com")
+            assert "403" in result
+
+    @patch("lftools_ng.core.connectivity.socket.gethostbyname")
+    def test_cloudflare_ip_detection(self, mock_gethostbyname):
+        """Test Cloudflare IP detection."""
+        tester = ConnectivityTester()
+
+        # Test with a known Cloudflare IP
+        mock_gethostbyname.return_value = "104.16.1.1"
+        result = tester._is_cloudflare_cdn_blocking("https://example.com")
+        assert result
+
+        # Test with a non-Cloudflare IP
+        mock_gethostbyname.return_value = "8.8.8.8"
+        result = tester._is_cloudflare_cdn_blocking("https://example.com")
+        assert not result
+
+    def test_cloudflare_ip_ranges(self):
+        """Test the Cloudflare IP range checking."""
+        tester = ConnectivityTester()
+
+        # Test known Cloudflare IPs
+        assert tester._is_cloudflare_ip("104.16.1.1")
+        assert tester._is_cloudflare_ip("172.64.0.1")
+        assert tester._is_cloudflare_ip("173.245.48.1")
+
+        # Test non-Cloudflare IPs
+        assert not tester._is_cloudflare_ip("8.8.8.8")
+        assert not tester._is_cloudflare_ip("1.1.1.1")
+        assert not tester._is_cloudflare_ip("192.168.1.1")
 
     def test_test_all(self):
         """Test the test_all method."""

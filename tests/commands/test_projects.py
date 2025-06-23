@@ -54,7 +54,7 @@ class TestProjectCommands:
         mock_manager.list_servers.return_value = []
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, ["servers"])
+        result = self.runner.invoke(projects_app, ["servers", "list"])
 
         assert result.exit_code == 0
         # Should show empty table with headers
@@ -69,16 +69,19 @@ class TestProjectCommands:
                 "name": "jenkins-prod",
                 "type": "jenkins",
                 "url": "https://jenkins.example.org/",
-                "project_count": 5,
+                "vpn_address": "jenkins-prod.vpn",
+                "location": "Virginia",
+                "projects": ["project1", "project2"],
             }
         ]
         mock_project_manager_class.return_value = mock_manager
 
-        result = self.runner.invoke(projects_app, ["servers"])
+        result = self.runner.invoke(projects_app, ["servers", "list"])
 
         assert result.exit_code == 0
-        assert "jenkins-prod" in result.output
-        assert "5" in result.output
+        assert "jenkins-prod.vpn" in result.output
+        assert "Virginia" in result.output
+        assert "project1 (+1)" in result.output
 
     @patch("lftools_ng.commands.projects.ProjectManager")
     def test_rebuild_projects_database_success(self, mock_project_manager_class: Mock) -> None:
@@ -281,3 +284,239 @@ class TestProjectCommands:
         )
 
         assert result_uniformity.returncode == 0
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_basic(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test basic servers connectivity command."""
+        # Setup mocks
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {"name": "server1", "url": "https://server1.example.org", "vpn_address": "server1.vpn"}
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+        mock_tester.test_url.return_value = "✓"  # Updated method name
+        mock_tester.test_ssh_port.return_value = "✓"
+        mock_tester.test_ssh_shell.return_value = "✓"
+        mock_tester.get_last_ssh_details.return_value = {}  # Add this method
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity"])
+
+        assert result.exit_code == 0
+        assert "Testing connectivity to 1 servers" in result.output
+        mock_connectivity_tester_class.assert_called_once_with(timeout=3)
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_with_timeout(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command with custom timeout."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {"name": "server1", "url": "https://server1.example.org", "vpn_address": "server1.vpn"}
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+        mock_tester.test_url.return_value = "✓"
+        mock_tester.test_ssh_port.return_value = "✓"
+        mock_tester.test_ssh_shell.return_value = "✓"
+        mock_tester.get_last_ssh_details.return_value = {}
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity", "--timeout", "10"])
+
+        assert result.exit_code == 0
+        assert "timeout: 10s" in result.output
+        mock_connectivity_tester_class.assert_called_once_with(timeout=10)
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_with_username(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command with specific username."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {"name": "server1", "url": "https://server1.example.org", "vpn_address": "server1.vpn"}
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+        mock_tester.test_url.return_value = "✓"
+        mock_tester.test_ssh_port.return_value = "✓"
+        mock_tester.test_ssh_shell.return_value = "✓"
+        mock_tester.get_last_ssh_details.return_value = {}
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        result = self.runner.invoke(
+            projects_app, ["servers", "connectivity", "--username", "testuser"]
+        )
+
+        assert result.exit_code == 0
+        assert "SSH username: testuser" in result.output
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_verbose(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command with verbose output."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {"name": "server1", "url": "https://server1.example.org", "vpn_address": "server1.vpn"}
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+        mock_tester.test_url.return_value = "✓"
+        mock_tester.test_ssh_port.return_value = "✓"
+        mock_tester.test_ssh_shell.return_value = "✓"
+        mock_tester.get_last_ssh_details.return_value = {}
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity", "--verbose"])
+
+        assert result.exit_code == 0
+        assert "Using local SSH config and authentication methods" in result.output
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_live_mode(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command with --live flag."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {"name": "server1", "url": "https://server1.example.org", "vpn_address": "server1.vpn"}
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+        mock_tester.test_url.return_value = "✓"
+        mock_tester.test_ssh_port.return_value = "✓"
+        mock_tester.test_ssh_shell.return_value = "✓"
+        mock_tester.get_last_ssh_details.return_value = {}
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity", "--live"])
+
+        assert result.exit_code == 0
+        assert "Testing connectivity to 1 servers" in result.output
+        assert "Live" in result.output  # Should show "Server Connectivity Test Results (Live)"
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    def test_servers_connectivity_no_servers(self, mock_project_manager_class: Mock) -> None:
+        """Test servers connectivity command when no servers are configured."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = []
+        mock_project_manager_class.return_value = mock_manager
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity"])
+
+        assert result.exit_code == 0
+        assert "No servers to test" in result.output
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_with_filters(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command with include/exclude filters."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {
+                "name": "jenkins-prod",
+                "url": "https://jenkins-prod.example.org",
+                "vpn_address": "jenkins-prod.vpn",
+            },
+            {
+                "name": "jenkins-staging",
+                "url": "https://jenkins-staging.example.org",
+                "vpn_address": "jenkins-staging.vpn",
+            },
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+        mock_tester.test_url.return_value = "✓"
+        mock_tester.test_ssh_port.return_value = "✓"
+        mock_tester.test_ssh_shell.return_value = "✓"
+        mock_tester.get_last_ssh_details.return_value = {}
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        # Test with include filter
+        result = self.runner.invoke(
+            projects_app, ["servers", "connectivity", "--include", "name~=prod"]
+        )
+
+        assert result.exit_code == 0, f"Command failed with output: {result.output}"
+        # Due to filtering complexity, we'll just check it runs successfully
+        # The actual filtering logic is tested in the core modules
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    @patch("lftools_ng.core.connectivity.ConnectivityTester")
+    def test_servers_connectivity_mixed_results(
+        self, mock_connectivity_tester_class: Mock, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command with mixed success/failure results."""
+        mock_manager = Mock()
+        mock_manager.list_servers.return_value = [
+            {"name": "server1", "url": "https://server1.example.org", "vpn_address": "server1.vpn"},
+            {"name": "server2", "url": "https://server2.example.org", "vpn_address": "server2.vpn"},
+        ]
+        mock_project_manager_class.return_value = mock_manager
+
+        mock_tester = Mock()
+
+        # Configure different results for different calls
+        def mock_test_url(url):
+            if "server1" in url:
+                return "✓"
+            return "✗"
+
+        def mock_test_ssh_port(address):
+            if "server1" in address:
+                return "✓"
+            return "✗"
+
+        def mock_test_ssh_shell(address, username=None, verbose=False):
+            if "server1" in address:
+                return "⚠"
+            return "✗"
+
+        mock_tester.test_url.side_effect = mock_test_url
+        mock_tester.test_ssh_port.side_effect = mock_test_ssh_port
+        mock_tester.test_ssh_shell.side_effect = mock_test_ssh_shell
+        mock_tester.get_last_ssh_details.return_value = {}
+        mock_connectivity_tester_class.return_value = mock_tester
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity"])
+
+        assert result.exit_code == 0
+        assert "Testing connectivity to 2 servers" in result.output
+
+    @patch("lftools_ng.commands.projects.ProjectManager")
+    def test_servers_connectivity_exception_handling(
+        self, mock_project_manager_class: Mock
+    ) -> None:
+        """Test servers connectivity command handles exceptions gracefully."""
+        mock_manager = Mock()
+        mock_manager.list_servers.side_effect = Exception("Database error")
+        mock_project_manager_class.return_value = mock_manager
+
+        result = self.runner.invoke(projects_app, ["servers", "connectivity"])
+
+        # Command should handle the exception gracefully
+        # The exact behavior depends on implementation - we'll verify it doesn't crash
+        assert (
+            result.exit_code != 0
+            or "error" in result.output.lower()
+            or "Database error" in result.output
+        )

@@ -19,6 +19,7 @@ RESULT_SUCCESS = "[green]✓[/green]"
 RESULT_FAILURE = "[red]✗[/red]"
 RESULT_TIMEOUT = "[yellow]⏱[/yellow]"
 RESULT_WARNING = "[yellow]⚠[/yellow]"
+RESULT_CLOUDFLARE_CDN = "[yellow]☁[/yellow]"
 RESULT_NA = "[dim]N/A[/dim]"
 
 
@@ -52,6 +53,12 @@ class ConnectivityTester:
                 response = client.head(url, follow_redirects=True)
                 if response.status_code < 400:
                     return RESULT_SUCCESS
+                elif response.status_code == 403:
+                    # Check if this is a Cloudflare CDN blocking bot-like requests
+                    if self._is_cloudflare_cdn_blocking(url):
+                        return RESULT_CLOUDFLARE_CDN
+                    else:
+                        return f"[red]✗ ({response.status_code})[/red]"
                 else:
                     return f"[red]✗ ({response.status_code})[/red]"
         except httpx.TimeoutException:
@@ -331,3 +338,83 @@ class ConnectivityTester:
         results["ssh_shell"] = self.test_ssh_shell(vpn_address, username=username, verbose=verbose)
 
         return results
+
+    def _is_cloudflare_cdn_blocking(self, url: str) -> bool:
+        """Check if a 403 error is caused by Cloudflare CDN blocking bot-like requests.
+
+        Args:
+            url: The URL that returned a 403 error
+
+        Returns:
+            True if the URL is behind Cloudflare CDN, False otherwise
+        """
+        try:
+            from urllib.parse import urlparse
+            import socket
+
+            # Extract hostname from URL
+            parsed_url = urlparse(url)
+            hostname = parsed_url.netloc
+
+            if not hostname:
+                return False
+
+            # Perform DNS lookup to get IP address
+            try:
+                ip_address = socket.gethostbyname(hostname)
+            except socket.gaierror:
+                logger.debug(f"Could not resolve hostname {hostname}")
+                return False
+
+            # Check if the IP address belongs to Cloudflare's IP ranges
+            return self._is_cloudflare_ip(ip_address)
+
+        except Exception as e:
+            logger.debug(f"Error checking Cloudflare CDN for {url}: {e}")
+            return False
+
+    def _is_cloudflare_ip(self, ip_address: str) -> bool:
+        """Check if an IP address belongs to Cloudflare's known IP ranges.
+
+        Args:
+            ip_address: The IP address to check
+
+        Returns:
+            True if the IP belongs to Cloudflare, False otherwise
+        """
+        try:
+            import ipaddress
+
+            # Cloudflare's known IP ranges (IPv4)
+            # These are the main Cloudflare IP ranges as of 2025
+            cloudflare_ranges = [
+                "173.245.48.0/20",
+                "103.21.244.0/22",
+                "103.22.200.0/22",
+                "103.31.4.0/22",
+                "141.101.64.0/18",
+                "108.162.192.0/18",
+                "190.93.240.0/20",
+                "188.114.96.0/20",
+                "197.234.240.0/22",
+                "198.41.128.0/17",
+                "162.158.0.0/15",
+                "104.16.0.0/13",
+                "104.24.0.0/14",
+                "172.64.0.0/13",
+                "131.0.72.0/22"
+            ]
+
+            ip = ipaddress.ip_address(ip_address)
+
+            for range_str in cloudflare_ranges:
+                network = ipaddress.ip_network(range_str)
+                if ip in network:
+                    logger.debug(f"IP {ip_address} matches Cloudflare range {range_str}")
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"Error checking if IP {ip_address} is Cloudflare: {e}")
+            return False

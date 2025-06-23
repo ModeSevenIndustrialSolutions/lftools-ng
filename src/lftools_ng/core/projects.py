@@ -345,6 +345,14 @@ class ProjectManager:
                     logger.error(f"First few servers: {servers[:3]}")
                 raise
 
+            # Reconcile VPN addresses with live Tailscale data
+            logger.info("Reconciling VPN addresses with Tailscale data...")
+            try:
+                self._enhance_servers_with_tailscale_data(servers)
+                logger.info("VPN address reconciliation completed")
+            except Exception as e:
+                logger.warning(f"VPN reconciliation failed, continuing without it: {e}")
+
             # Save to file
             self._save_servers(servers)
 
@@ -1384,6 +1392,10 @@ class ProjectManager:
     def _enhance_servers_with_tailscale_data(self, servers: List[Dict[str, Any]]) -> None:
         """Enhance servers with live Tailscale VPN address data.
 
+        This method comprehensively reconciles server VPN addresses with live Tailscale data.
+        It eliminates placeholder 100.64.X.Y addresses and only populates VPN addresses
+        from actual Tailscale connectivity.
+
         Args:
             servers: List of server dictionaries to enhance with VPN addresses
         """
@@ -1391,49 +1403,391 @@ class ProjectManager:
             from lftools_ng.core.tailscale_parser import TailscaleParser
 
             parser = TailscaleParser()
-            tailscale_servers = parser.get_available_servers()
 
-            if not tailscale_servers:
-                logger.warning("No Tailscale data available - VPN addresses may be outdated")
+            # Get live Tailscale status
+            logger.info("Fetching live Tailscale status for VPN address reconciliation...")
+            tailscale_status = parser.get_tailscale_status()
+
+            if not tailscale_status:
+                logger.warning("No Tailscale data available - clearing placeholder VPN addresses")
+                self._clear_placeholder_vpn_addresses(servers)
                 return
 
-            # Create a mapping from server names to VPN addresses
-            vpn_mapping = {}
-            for ts_server in tailscale_servers:
-                hostname = ts_server.get("name", "")
-                vpn_addr = ts_server.get("vpn_address", "")
-                if hostname and vpn_addr:
-                    # Map both the hostname and the public domain name
-                    vpn_mapping[hostname] = vpn_addr
+            # Parse Tailscale peers to get available servers
+            tailscale_servers = parser.parse_vpn_servers(tailscale_status)
 
-                    # Also try to map public domain equivalents
-                    # E.g., map from "vex-yul-onap-gerrit-1" to "gerrit.onap.org"
-                    public_name = self._map_internal_hostname_to_public(hostname)
-                    if public_name:
-                        vpn_mapping[public_name] = vpn_addr
+            if not tailscale_servers:
+                logger.warning("No Tailscale servers found - clearing placeholder VPN addresses")
+                self._clear_placeholder_vpn_addresses(servers)
+                return
 
-            # Update servers with live VPN addresses
-            enhanced_count = 0
-            for server in servers:
-                server_name = server.get("name", "")
-                if server_name in vpn_mapping:
-                    old_vpn = server.get("vpn_address", "")
-                    new_vpn = vpn_mapping[server_name]
-                    if old_vpn != new_vpn:
-                        server["vpn_address"] = new_vpn
-                        enhanced_count += 1
-                        logger.info(f"Updated VPN address for {server_name}: {old_vpn} -> {new_vpn}")
+            logger.info(f"Found {len(tailscale_servers)} servers in Tailscale network")
 
-            if enhanced_count > 0:
-                logger.info(f"Enhanced {enhanced_count} servers with live Tailscale VPN addresses")
-            else:
-                logger.info("No VPN address updates needed - all servers already have current addresses")
+            # Create comprehensive mapping from Tailscale data
+            vpn_mapping = self._create_comprehensive_vpn_mapping(tailscale_servers)
+
+            # Perform gap analysis and update servers
+            self._reconcile_server_vpn_addresses(servers, vpn_mapping, tailscale_servers)
 
         except ImportError:
-            logger.warning("Tailscale parser not available - using static VPN addresses")
+            logger.warning("Tailscale parser not available - clearing placeholder VPN addresses")
+            self._clear_placeholder_vpn_addresses(servers)
         except Exception as e:
             logger.warning(f"Failed to enhance servers with Tailscale data: {e}")
+            logger.warning("Clearing placeholder VPN addresses due to error")
+            self._clear_placeholder_vpn_addresses(servers)
 
+    def _clear_placeholder_vpn_addresses(self, servers: List[Dict[str, Any]]) -> None:
+        """Clear placeholder 100.64.X.Y VPN addresses from servers.
+
+        Args:
+            servers: List of server dictionaries to clean up
+        """
+        cleared_count = 0
+        for server in servers:
+            vpn_address = server.get("vpn_address")
+            if vpn_address and str(vpn_address).startswith("100.64."):
+                logger.info(f"Clearing placeholder VPN address for {server.get('name', 'unknown')}: {vpn_address}")
+                server["vpn_address"] = None
+                cleared_count += 1
+
+        if cleared_count > 0:
+            logger.info(f"Cleared {cleared_count} placeholder VPN addresses")
+
+    def _create_comprehensive_vpn_mapping(self, tailscale_servers: List[Any]) -> Dict[str, str]:
+        """Create comprehensive mapping from public server names to VPN addresses.
+
+        Args:
+            tailscale_servers: List of Server objects from Tailscale
+
+        Returns:
+            Dict mapping public server names to VPN addresses
+        """
+        vpn_mapping: Dict[str, str] = {}
+
+        for ts_server in tailscale_servers:
+            hostname = ts_server.name if hasattr(ts_server, 'name') else str(ts_server.get("name", ""))
+            vpn_addr = ts_server.vpn_address if hasattr(ts_server, 'vpn_address') else ts_server.get("vpn_address", "")
+
+            if not hostname or not vpn_addr:
+                continue
+
+            logger.debug(f"Processing Tailscale server: {hostname} -> {vpn_addr}")
+
+            # Map direct hostname
+            vpn_mapping[hostname] = vpn_addr
+
+            # Map public domain equivalents using comprehensive patterns
+            public_mappings = self._map_tailscale_hostname_to_public_domains(hostname)
+            for public_name in public_mappings:
+                vpn_mapping[public_name] = vpn_addr
+                logger.debug(f"Mapped {hostname} -> {public_name} -> {vpn_addr}")
+
+        logger.info(f"Created VPN mapping for {len(vpn_mapping)} server name variants")
+        return vpn_mapping
+
+    def _map_tailscale_hostname_to_public_domains(self, hostname: str) -> List[str]:
+        """Map Tailscale internal hostname to all possible public domain names.
+
+        Args:
+            hostname: Internal Tailscale hostname (e.g., "vex-yul-ecomp-jenkins-1")
+
+        Returns:
+            List of public domain names this could map to
+        """
+        hostname_lower = hostname.lower()
+        mappings: List[str] = []
+
+        # Create specific mappings based on actual Tailscale output patterns
+        # These are derived from the actual tss output provided by the user
+        specific_mappings = {
+            # ONAP/ECOMP mappings from actual Tailscale output
+            "vex-yul-ecomp-jenkins-1": ["jenkins.onap.org"],
+            "vex-yul-ecomp-jenkins-2": ["jenkins.onap.org/sandbox"],
+            "aws-us-west-2-onap-gerrit-1": ["gerrit.onap.org"],
+            "vex-yul-onap-nexus-4": ["nexus3.onap.org"],
+
+            # OpenDaylight mappings
+            "vex-yul-odl-jenkins-1": ["jenkins.opendaylight.org"],
+            "vex-yul-odl-jenkins-2": ["jenkins.opendaylight.org/sandbox"],
+            "aws-eu-west-3-odl-gerrit-1": ["git.opendaylight.org"],
+            "aws-us-west-2-odl-gerrit-1": ["git.opendaylight.org"],
+            "vex-yul-odl-nexus-1": ["nexus3.opendaylight.org"],
+            "vex-yul-odl-nexus-2": ["nexus3.opendaylight.org"],
+
+            # O-RAN-SC mappings
+            "vex-sjc-oran-jenkins-prod-1": ["jenkins.o-ran-sc.org"],
+            "vex-sjc-oran-jenkins-sandbox-1": ["jenkins.o-ran-sc.org/sandbox"],
+            "aws-us-west-2-oran-gerrit-1": ["gerrit.o-ran-sc.org"],
+            "vex-sjc-oran-nexus3-1": ["nexus3.o-ran-sc.org"],
+            "vex-sjc-oran-nexus2-1": ["nexus3.o-ran-sc.org"],
+
+            # Akraino mappings
+            "vex-yul-akraino-jenkins-prod-1": ["jenkins.akraino.org"],
+            "vex-yul-akraino-jenkins-sandbox-1": ["jenkins.akraino.org/sandbox"],
+            "aws-us-west-2-akraino-gerrit-1": ["gerrit.akraino.org"],
+            "vex-yul-akraino-nexus3-1": ["nexus3.akraino.org"],
+            "vex-yul-akraino-nexus2-1": ["nexus3.akraino.org"],
+
+            # EdgeX Foundry mappings
+            "vex-yul-edgex-jenkins-1": ["jenkins.edgexfoundry.org"],
+            "vex-yul-edgex-jenkins-2": ["jenkins.edgexfoundry.org/sandbox"],
+            "vex-yul-edgex-nexus-2-1": ["nexus3.edgexfoundry.org"],
+            "vex-yul-edgex-nexus-2": ["nexus3.edgexfoundry.org"],
+
+            # FD.io mappings
+            "aws-us-west-2-fdio-gerrit-1": ["gerrit.fd.io"],
+
+            # OPNFV mappings
+            "aws-us-west-2-opnfv-gerrit-1": ["gerrit.opnfv.org"],
+            "gce-opnfv-jenkins-2": ["build.opnfv.org", "build.opnfv.org/sandbox"],
+            "vex-yul-opnfv-jenkins-sandbox-1": ["build.opnfv.org/sandbox"],
+
+            # CORD mappings
+            "aws-us-west-2-cord-jenkins-1": ["jenkins.opencord.org"],
+
+            # AGL mappings
+            "vex-yul-agl-jenkins-1": ["build.automotivelinux.org"],
+            "aws-us-west-2-agl-gerrit-1": ["gerrit.automotivelinux.org"],
+            "aws-us-west-2-agl-gerrit-2-1": ["gerrit.automotivelinux.org"],
+
+            # Linux Foundation IT mappings
+            "aws-us-west-2-lfit-jenkins-1": ["jenkins.linuxfoundation.org"],
+            "aws-us-west-2-lfit-jenkins-sandbox-1": ["jenkins.linuxfoundation.org/sandbox"],
+            "aws-us-west-2-lfit-gerrit-1": ["gerrit.linuxfoundation.org"],
+        }
+
+        # Check for exact match first
+        if hostname_lower in specific_mappings:
+            mappings.extend(specific_mappings[hostname_lower])
+            return mappings
+
+        # Fallback to pattern-based matching for new or unrecognized servers
+        pattern_mappings = [
+            # ONAP/ECOMP patterns
+            {
+                "patterns": ["ecomp-jenkins-1", "onap-jenkins-1", "ecomp-jenkins-prod", "onap-jenkins-prod"],
+                "domains": ["jenkins.onap.org"]
+            },
+            {
+                "patterns": ["ecomp-jenkins-2", "onap-jenkins-2", "ecomp-jenkins-sandbox", "onap-jenkins-sandbox"],
+                "domains": ["jenkins.onap.org/sandbox"]
+            },
+            {
+                "patterns": ["ecomp-gerrit", "onap-gerrit"],
+                "domains": ["gerrit.onap.org"]
+            },
+            {
+                "patterns": ["ecomp-nexus", "onap-nexus"],
+                "domains": ["nexus3.onap.org"]
+            },
+
+            # OpenDaylight patterns
+            {
+                "patterns": ["odl-jenkins-1", "odl-jenkins-prod"],
+                "domains": ["jenkins.opendaylight.org"]
+            },
+            {
+                "patterns": ["odl-jenkins-2", "odl-jenkins-sandbox"],
+                "domains": ["jenkins.opendaylight.org/sandbox"]
+            },
+            {
+                "patterns": ["odl-gerrit"],
+                "domains": ["git.opendaylight.org"]
+            },
+            {
+                "patterns": ["odl-nexus"],
+                "domains": ["nexus3.opendaylight.org"]
+            },
+
+            # O-RAN-SC patterns
+            {
+                "patterns": ["oran-jenkins-prod", "oran-jenkins-1"],
+                "domains": ["jenkins.o-ran-sc.org"]
+            },
+            {
+                "patterns": ["oran-jenkins-sandbox", "oran-jenkins-2"],
+                "domains": ["jenkins.o-ran-sc.org/sandbox"]
+            },
+            {
+                "patterns": ["oran-gerrit"],
+                "domains": ["gerrit.o-ran-sc.org"]
+            },
+            {
+                "patterns": ["oran-nexus"],
+                "domains": ["nexus3.o-ran-sc.org"]
+            },
+
+            # Akraino patterns
+            {
+                "patterns": ["akraino-jenkins-prod", "akraino-jenkins-1"],
+                "domains": ["jenkins.akraino.org"]
+            },
+            {
+                "patterns": ["akraino-jenkins-sandbox", "akraino-jenkins-2"],
+                "domains": ["jenkins.akraino.org/sandbox"]
+            },
+            {
+                "patterns": ["akraino-gerrit"],
+                "domains": ["gerrit.akraino.org"]
+            },
+            {
+                "patterns": ["akraino-nexus"],
+                "domains": ["nexus3.akraino.org"]
+            },
+
+            # EdgeX patterns
+            {
+                "patterns": ["edgex-jenkins-1", "edgex-jenkins-prod"],
+                "domains": ["jenkins.edgexfoundry.org"]
+            },
+            {
+                "patterns": ["edgex-jenkins-2", "edgex-jenkins-sandbox"],
+                "domains": ["jenkins.edgexfoundry.org/sandbox"]
+            },
+            {
+                "patterns": ["edgex-nexus"],
+                "domains": ["nexus3.edgexfoundry.org"]
+            },
+
+            # FD.io patterns
+            {
+                "patterns": ["fdio-gerrit"],
+                "domains": ["gerrit.fd.io"]
+            },
+            {
+                "patterns": ["fdio-jenkins"],
+                "domains": ["jenkins.fd.io", "jenkins.fd.io/sandbox"]
+            },
+            {
+                "patterns": ["fdio-nexus"],
+                "domains": ["nexus.fd.io"]
+            },
+
+            # OPNFV patterns
+            {
+                "patterns": ["opnfv-jenkins", "opnfv-build"],
+                "domains": ["build.opnfv.org", "build.opnfv.org/sandbox"]
+            },
+            {
+                "patterns": ["opnfv-gerrit"],
+                "domains": ["gerrit.opnfv.org"]
+            },
+            {
+                "patterns": ["opnfv-nexus"],
+                "domains": ["nexus3.opnfv.org"]
+            },
+
+            # CORD patterns
+            {
+                "patterns": ["cord-jenkins"],
+                "domains": ["jenkins.opencord.org", "jenkins.opencord.org/sandbox"]
+            },
+            {
+                "patterns": ["cord-gerrit"],
+                "domains": ["gerrit.opencord.org"]
+            },
+            {
+                "patterns": ["cord-nexus"],
+                "domains": ["nexus3.opencord.org"]
+            },
+
+            # AGL patterns
+            {
+                "patterns": ["agl-jenkins", "agl-build"],
+                "domains": ["build.automotivelinux.org", "build.automotivelinux.org/sandbox"]
+            },
+            {
+                "patterns": ["agl-gerrit"],
+                "domains": ["gerrit.automotivelinux.org"]
+            },
+            {
+                "patterns": ["agl-nexus"],
+                "domains": ["nexus3.automotivelinux.org"]
+            },
+
+            # Linux Foundation IT patterns
+            {
+                "patterns": ["lfit-jenkins", "linuxfoundation-jenkins"],
+                "domains": ["jenkins.linuxfoundation.org", "jenkins.linuxfoundation.org/sandbox"]
+            },
+            {
+                "patterns": ["lfit-gerrit", "linuxfoundation-gerrit"],
+                "domains": ["gerrit.linuxfoundation.org"]
+            },
+            {
+                "patterns": ["lfit-nexus", "linuxfoundation-nexus"],
+                "domains": ["nexus3.linuxfoundation.org"]
+            },
+        ]
+
+        # Apply pattern-based mapping rules
+        for rule in pattern_mappings:
+            for pattern in rule["patterns"]:
+                if pattern in hostname_lower:
+                    mappings.extend(rule["domains"])
+                    break
+
+        # Remove duplicates while preserving order
+        return list(dict.fromkeys(mappings))
+
+    def _reconcile_server_vpn_addresses(self, servers: List[Dict[str, Any]], vpn_mapping: Dict[str, str], tailscale_servers: List[Any]) -> None:
+        """Reconcile server VPN addresses with Tailscale data and perform gap analysis.
+
+        Args:
+            servers: List of server dictionaries to update
+            vpn_mapping: Mapping from server names to VPN addresses
+            tailscale_servers: List of Tailscale server objects for gap analysis
+        """
+        updated_count = 0
+        cleared_count = 0
+        gap_servers: List[str] = []
+
+        # Update servers with actual Tailscale VPN addresses
+        for server in servers:
+            server_name = server.get("name", "")
+            current_vpn = server.get("vpn_address")
+
+            if server_name in vpn_mapping:
+                new_vpn = vpn_mapping[server_name]
+                if current_vpn != new_vpn:
+                    logger.info(f"Updated VPN address for {server_name}: {current_vpn} -> {new_vpn}")
+                    server["vpn_address"] = new_vpn
+                    updated_count += 1
+            else:
+                # Server not found in Tailscale - clear placeholder VPN addresses
+                if current_vpn and (str(current_vpn).startswith("100.64.") or not str(current_vpn).startswith("100.")):
+                    logger.info(f"Clearing VPN address for {server_name} (not in Tailscale): {current_vpn}")
+                    server["vpn_address"] = None
+                    cleared_count += 1
+                    gap_servers.append(server_name)
+
+        # Perform gap analysis - identify Tailscale servers not in our database
+        tailscale_hostnames = {ts.name if hasattr(ts, 'name') else str(ts.get("name", "")) for ts in tailscale_servers}
+        mapped_hostnames = set(vpn_mapping.keys())
+
+        # Find Tailscale servers that don't map to any server in our database
+        unmapped_tailscale = tailscale_hostnames - {k for k in vpn_mapping.keys() if k in tailscale_hostnames}
+
+        # Log reconciliation results
+        logger.info(f"VPN address reconciliation complete:")
+        logger.info(f"  - Updated {updated_count} servers with live Tailscale VPN addresses")
+        logger.info(f"  - Cleared {cleared_count} placeholder/invalid VPN addresses")
+        logger.info(f"  - {len(gap_servers)} servers not found in Tailscale network")
+        logger.info(f"  - {len(unmapped_tailscale)} Tailscale servers not mapped to database entries")
+
+        if gap_servers:
+            logger.warning(f"Servers missing from Tailscale network: {', '.join(gap_servers[:10])}")
+            if len(gap_servers) > 10:
+                logger.warning(f"... and {len(gap_servers) - 10} more")
+
+        if unmapped_tailscale:
+            logger.info(f"Unmapped Tailscale servers: {', '.join(list(unmapped_tailscale)[:10])}")
+            if len(unmapped_tailscale) > 10:
+                logger.info(f"... and {len(unmapped_tailscale) - 10} more")
+
+    # Keep the original _map_internal_hostname_to_public method for backward compatibility
+    # but mark it as deprecated in favor of the new comprehensive mapping
     def _map_internal_hostname_to_public(self, internal_hostname: str) -> Optional[str]:
         """Map internal Tailscale hostname to public domain name.
 
@@ -1447,52 +1801,52 @@ class ProjectManager:
 
         # Define mapping patterns from internal names to public domains
         mapping_patterns = [
-            # ONAP mappings (including ECOMP legacy names)
+            # ONAP mappings (including ECOMP legacy names) - more specific patterns first
             (r".*onap.*gerrit.*", "gerrit.onap.org"),
             (r".*onap.*nexus.*", "nexus3.onap.org"),
-            (r".*onap.*jenkins.*(prod|1).*", "jenkins.onap.org"),
             (r".*onap.*jenkins.*(sandbox|2).*", "jenkins.onap.org/sandbox"),
-            # ECOMP legacy mappings to ONAP
+            (r".*onap.*jenkins.*(prod|1).*", "jenkins.onap.org"),
+            # ECOMP legacy mappings to ONAP - more specific patterns first
             (r".*ecomp.*gerrit.*", "gerrit.onap.org"),
             (r".*ecomp.*nexus.*", "nexus3.onap.org"),
-            (r".*ecomp.*jenkins.*(prod|1).*", "jenkins.onap.org"),
             (r".*ecomp.*jenkins.*(sandbox|2).*", "jenkins.onap.org/sandbox"),
+            (r".*ecomp.*jenkins.*(prod|1).*", "jenkins.onap.org"),
 
-            # OpenDaylight mappings
+            # OpenDaylight mappings - more specific patterns first
             (r".*odl.*gerrit.*", "git.opendaylight.org"),
             (r".*odl.*nexus.*", "nexus3.opendaylight.org"),
-            (r".*odl.*jenkins.*(prod|1).*", "jenkins.opendaylight.org"),
             (r".*odl.*jenkins.*(sandbox|2).*", "jenkins.opendaylight.org/sandbox"),
+            (r".*odl.*jenkins.*(prod|1).*", "jenkins.opendaylight.org"),
 
-            # O-RAN-SC mappings
+            # O-RAN-SC mappings (more specific patterns first)
             (r".*oran.*gerrit.*", "gerrit.o-ran-sc.org"),
             (r".*oran.*nexus.*", "nexus3.o-ran-sc.org"),
-            (r".*oran.*jenkins.*(prod|1).*", "jenkins.o-ran-sc.org"),
             (r".*oran.*jenkins.*(sandbox|2).*", "jenkins.o-ran-sc.org/sandbox"),
+            (r".*oran.*jenkins.*(prod|1).*", "jenkins.o-ran-sc.org"),
 
-            # Akraino mappings
+            # Akraino mappings - more specific patterns first
             (r".*akraino.*gerrit.*", "gerrit.akraino.org"),
             (r".*akraino.*nexus.*", "nexus3.akraino.org"),
-            (r".*akraino.*jenkins.*(prod|1).*", "jenkins.akraino.org"),
             (r".*akraino.*jenkins.*(sandbox|2).*", "jenkins.akraino.org/sandbox"),
+            (r".*akraino.*jenkins.*(prod|1).*", "jenkins.akraino.org"),
 
-            # FD.io mappings
+            # FD.io mappings - more specific patterns first
             (r".*fdio.*gerrit.*", "gerrit.fd.io"),
             (r".*fdio.*nexus.*", "nexus.fd.io"),
-            (r".*fdio.*jenkins.*(prod|1).*", "jenkins.fd.io"),
             (r".*fdio.*jenkins.*(sandbox|2).*", "jenkins.fd.io/sandbox"),
+            (r".*fdio.*jenkins.*(prod|1).*", "jenkins.fd.io"),
 
-            # OPNFV mappings
+            # OPNFV mappings - more specific patterns first
             (r".*opnfv.*gerrit.*", "gerrit.opnfv.org"),
             (r".*opnfv.*nexus.*", "nexus3.opnfv.org"),
-            (r".*opnfv.*jenkins.*(prod|1).*", "build.opnfv.org"),
             (r".*opnfv.*jenkins.*(sandbox|2).*", "build.opnfv.org/sandbox"),
+            (r".*opnfv.*jenkins.*(prod|1).*", "build.opnfv.org"),
 
-            # EdgeX mappings
+            # EdgeX mappings - more specific patterns first
             (r".*edgex.*gerrit.*", "gerrit.edgexfoundry.org"),
             (r".*edgex.*nexus.*", "nexus3.edgexfoundry.org"),
-            (r".*edgex.*jenkins.*(prod|1).*", "jenkins.edgexfoundry.org"),
             (r".*edgex.*jenkins.*(sandbox|2).*", "jenkins.edgexfoundry.org/sandbox"),
+            (r".*edgex.*jenkins.*(prod|1).*", "jenkins.edgexfoundry.org"),
 
             # AGL mappings
             (r".*agl.*gerrit.*", "gerrit.automotivelinux.org"),
