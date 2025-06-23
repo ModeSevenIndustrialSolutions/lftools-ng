@@ -339,7 +339,7 @@ class TestFilteringSystemRequirements:
         # Test projects commands
         commands_to_test = [
             ["projects", "list", "--help"],
-            ["projects", "servers", "--help"],
+            ["projects", "servers", "list", "--help"],
             ["jenkins", "credentials", "--help"],
         ]
 
