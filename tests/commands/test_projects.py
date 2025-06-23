@@ -239,6 +239,7 @@ class TestProjectCommands:
     def test_projects_list_integration(self) -> None:
         """Integration test for the complete projects list functionality."""
         import json
+        import os
         import subprocess
 
         # Test the actual command with JSON output to verify data structure
@@ -246,7 +247,7 @@ class TestProjectCommands:
             ["lftools-ng", "projects", "list", "--format", "json"],
             capture_output=True,
             text=True,
-            cwd="/Users/mwatkins/Repositories/ModeSevenIndustrialSolutions/lftools-ng",
+            cwd=os.getcwd(),  # Use current working directory instead of hardcoded path
         )
 
         assert result.returncode == 0, f"Command failed: {result.stderr}"
@@ -267,7 +268,7 @@ class TestProjectCommands:
             ["lftools-ng", "projects", "list"],
             capture_output=True,
             text=True,
-            cwd="/Users/mwatkins/Repositories/ModeSevenIndustrialSolutions/lftools-ng",
+            cwd=os.getcwd(),
         )
 
         assert result_table.returncode == 0
@@ -280,7 +281,7 @@ class TestProjectCommands:
             ["lftools-ng", "projects", "list", "--check-uniformity"],
             capture_output=True,
             text=True,
-            cwd="/Users/mwatkins/Repositories/ModeSevenIndustrialSolutions/lftools-ng",
+            cwd=os.getcwd(),
         )
 
         assert result_uniformity.returncode == 0
