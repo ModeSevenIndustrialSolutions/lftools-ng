@@ -24,7 +24,7 @@ projects_app = typer.Typer(
 servers_app = typer.Typer(
     name="servers",
     help="Server management and connectivity testing",
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
 projects_app.add_typer(servers_app, name="servers")
 
@@ -953,3 +953,54 @@ def _test_connectivity_with_progress(servers: List[Dict[str, Any]], tester, user
     console.print("  [yellow]⏱[/yellow] Timeout")
     console.print("  [yellow]☁[/yellow] Cloudflare CDN blocked")
     console.print("  [dim]N/A[/dim] Test not applicable")
+
+
+@servers_app.callback(invoke_without_command=True)
+def servers_default(
+    ctx: typer.Context,
+    config_dir: Optional[str] = typer.Option(
+        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
+    ),
+    output_format: str = typer.Option(
+        "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
+    ),
+    include: Optional[List[str]] = typer.Option(
+        None, "--include", "-i",
+        help="Include filters (e.g., 'type=jenkins', 'location~=virginia', 'project_count>5')"
+    ),
+    exclude: Optional[List[str]] = typer.Option(
+        None, "--exclude", "-e",
+        help="Exclude filters (same syntax as include filters)"
+    ),
+    fields: Optional[str] = typer.Option(
+        None, "--fields",
+        help="Fields to include in output (comma-separated, e.g., 'name,type,url')"
+    ),
+    exclude_fields: Optional[str] = typer.Option(
+        None, "--exclude-fields",
+        help="Fields to exclude from output (comma-separated)"
+    ),
+) -> None:
+    """List all registered servers (Jenkins, Gerrit, Nexus, etc.) with filtering capabilities.
+
+    This is the default command when running 'projects servers' without subcommands.
+
+    Filter examples:
+    - Only Jenkins servers: --include 'type=jenkins'
+    - Servers in Virginia: --include 'location~=virginia'
+    - Exclude test servers: --exclude 'name~=test'
+    - Show only name and URL: --fields 'name,url'
+    """
+    # If a subcommand was provided, don't execute the default behavior
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Call the list_servers function with the same parameters
+    list_servers(
+        config_dir=config_dir,
+        output_format=output_format,
+        include=include,
+        exclude=exclude,
+        fields=fields,
+        exclude_fields=exclude_fields,
+    )
