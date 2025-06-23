@@ -491,6 +491,9 @@ def test_connectivity(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed SSH test information"
     ),
+    live: bool = typer.Option(
+        False, "--live", "-l", help="Show results in real-time as tests complete"
+    ),
 ) -> None:
     """Test connectivity to all registered servers using local SSH configuration.
 
@@ -540,79 +543,15 @@ def test_connectivity(
         console.print(config_info + "\n")
 
         from lftools_ng.core.connectivity import ConnectivityTester
+
         tester = ConnectivityTester(timeout=timeout)
 
-        table = Table(title="Server Connectivity Test Results")
-        table.add_column("Server", style="cyan", no_wrap=True)
-        table.add_column("URL Test", justify="center")
-        table.add_column("SSH Port", justify="center")
-        table.add_column("SSH Shell", justify="center")
-        if verbose:
-            table.add_column("Details", style="dim")
-        table.add_column("VPN Address", style="dim")
-
-        for server in servers:
-            server_name = server.get("name", "Unknown")
-            server_url = server.get("url", "")
-            vpn_address = server.get("vpn_address", "")
-
-            # Test URL accessibility
-            url_result = tester.test_url(server_url) if server_url else "N/A"
-
-            # Test SSH port connectivity
-            ssh_port_result = tester.test_ssh_port(vpn_address) if vpn_address else "N/A"
-
-            # Test SSH shell access with specified or auto-detected username
-            if vpn_address:
-                ssh_shell_result = tester.test_ssh_shell(vpn_address, username=username, verbose=verbose)
-            else:
-                ssh_shell_result = "N/A"
-
-            row_data = [
-                server_name,
-                url_result,
-                ssh_port_result,
-                ssh_shell_result,
-            ]
-
-            if verbose:
-                # Add details about the test results and SSH details
-                details = []
-                if server_url and url_result != "N/A":
-                    details.append(f"URL: {server_url}")
-                if vpn_address:
-                    details.append(f"SSH: {vpn_address}:22")
-
-                    # Get SSH-specific details if available
-                    ssh_details = tester.get_last_ssh_details()
-                    if ssh_details:
-                        if ssh_details.get("successful_username"):
-                            details.append(f"User: {ssh_details['successful_username']}")
-                        elif ssh_details.get("attempted_usernames"):
-                            attempted = ", ".join(ssh_details["attempted_usernames"][:3])  # Limit to first 3
-                            if len(ssh_details["attempted_usernames"]) > 3:
-                                attempted += "..."
-                            details.append(f"Tried: {attempted}")
-
-                        if ssh_details.get("auth_methods_tried"):
-                            auth_methods = ", ".join(set(ssh_details["auth_methods_tried"]))
-                            details.append(f"Auth: {auth_methods}")
-
-                details_str = " | ".join(details) if details else "No details"
-                row_data.append(details_str)
-
-            row_data.append(vpn_address or "None")
-            table.add_row(*row_data)
-
-        console.print(table)
-
-        # Show legend for result symbols
-        console.print("\n[bold]Legend:[/bold]")
-        console.print("  [green]✓[/green] Success")
-        console.print("  [red]✗[/red] Failure")
-        console.print("  [yellow]⚠[/yellow] SSH service responding, authentication failed")
-        console.print("  [yellow]⏱[/yellow] Timeout")
-        console.print("  [dim]N/A[/dim] Test not applicable")
+        if live:
+            # Live mode: Show results as they come in
+            _test_connectivity_live(servers, tester, username, verbose, console)
+        else:
+            # Progress mode: Show progress bar with final results table
+            _test_connectivity_with_progress(servers, tester, username, verbose, console)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -734,3 +673,283 @@ def _determine_project_source(project: Dict[str, Any], manager: ProjectManager) 
         return "GitHub"
 
     return "Unknown"
+
+
+def _test_connectivity_live(servers: List[Dict[str, Any]], tester, username: Optional[str], verbose: bool, console) -> None:
+    """Test connectivity with live updating results."""
+    from rich.live import Live
+    from rich.table import Table
+
+    # Create the results table
+    table = Table(title="Server Connectivity Test Results (Live)")
+    table.add_column("Server", style="cyan", no_wrap=True)
+    table.add_column("URL Test", justify="center")
+    table.add_column("SSH Port", justify="center")
+    table.add_column("SSH Shell", justify="center")
+    if verbose:
+        table.add_column("Details", style="dim")
+    table.add_column("VPN Address", style="dim")
+
+    # Create a status message
+    status_table = Table.grid()
+    status_table.add_column()
+    status_table.add_row("[cyan]Starting connectivity tests...[/cyan]")
+
+    # Combine status and results
+    main_table = Table.grid()
+    main_table.add_column()
+    main_table.add_row(status_table)
+    main_table.add_row("")
+    main_table.add_row(table)
+
+    with Live(main_table, console=console, refresh_per_second=10) as live:
+        for i, server in enumerate(servers):
+            server_name = server.get("name", "Unknown")
+            server_url = server.get("url", "")
+            vpn_address = server.get("vpn_address", "")
+
+            # Show we're starting this server
+            status_table = Table.grid()
+            status_table.add_column()
+            status_table.add_row(f"[yellow]Testing {server_name} ({i+1}/{len(servers)}) - URL test...[/yellow]")
+
+            main_table = Table.grid()
+            main_table.add_column()
+            main_table.add_row(status_table)
+            main_table.add_row("")
+            main_table.add_row(table)
+
+            live.update(main_table)
+
+            # Test URL accessibility
+            url_result = tester.test_url(server_url) if server_url else "N/A"
+
+            # Update status for SSH port test
+            status_table = Table.grid()
+            status_table.add_column()
+            status_table.add_row(f"[yellow]Testing {server_name} ({i+1}/{len(servers)}) - SSH port test...[/yellow]")
+
+            main_table = Table.grid()
+            main_table.add_column()
+            main_table.add_row(status_table)
+            main_table.add_row("")
+            main_table.add_row(table)
+
+            live.update(main_table)
+
+            # Test SSH port connectivity
+            ssh_port_result = tester.test_ssh_port(vpn_address) if vpn_address else "N/A"
+
+            # Update status for SSH shell test
+            status_table = Table.grid()
+            status_table.add_column()
+            status_table.add_row(f"[yellow]Testing {server_name} ({i+1}/{len(servers)}) - SSH shell access...[/yellow]")
+
+            main_table = Table.grid()
+            main_table.add_column()
+            main_table.add_row(status_table)
+            main_table.add_row("")
+            main_table.add_row(table)
+
+            live.update(main_table)
+
+            # Test SSH shell access
+            if vpn_address:
+                ssh_shell_result = tester.test_ssh_shell(vpn_address, username=username, verbose=verbose)
+            else:
+                ssh_shell_result = "N/A"
+
+            # Build row data
+            row_data = [
+                server_name,
+                url_result,
+                ssh_port_result,
+                ssh_shell_result,
+            ]
+
+            if verbose:
+                # Add details about the test results and SSH details
+                details = []
+                if server_url and url_result != "N/A":
+                    details.append(f"URL: {server_url}")
+                if vpn_address:
+                    details.append(f"SSH: {vpn_address}:22")
+
+                    # Get SSH-specific details if available
+                    ssh_details = tester.get_last_ssh_details()
+                    if ssh_details:
+                        if ssh_details.get("successful_username"):
+                            details.append(f"User: {ssh_details['successful_username']}")
+                        elif ssh_details.get("attempted_usernames"):
+                            attempted = ", ".join(ssh_details["attempted_usernames"][:3])  # Limit to first 3
+                            if len(ssh_details["attempted_usernames"]) > 3:
+                                attempted += "..."
+                            details.append(f"Tried: {attempted}")
+
+                        if ssh_details.get("auth_methods_tried"):
+                            auth_methods = ", ".join(set(ssh_details["auth_methods_tried"]))
+                            details.append(f"Auth: {auth_methods}")
+
+                details_str = " | ".join(details) if details else "No details"
+                row_data.append(details_str)
+
+            row_data.append(vpn_address or "None")
+            table.add_row(*row_data)
+
+            # Update the display with completed server
+            status_table = Table.grid()
+            status_table.add_column()
+            status_table.add_row(f"[green]✓[/green] {server_name} completed ({i+1}/{len(servers)})")
+
+            main_table = Table.grid()
+            main_table.add_column()
+            main_table.add_row(status_table)
+            main_table.add_row("")
+            main_table.add_row(table)
+
+            live.update(main_table)
+
+        # Final status
+        status_table = Table.grid()
+        status_table.add_column()
+        status_table.add_row("[green]✓ All connectivity tests completed![/green]")
+
+        main_table = Table.grid()
+        main_table.add_column()
+        main_table.add_row(status_table)
+        main_table.add_row("")
+        main_table.add_row(table)
+
+        live.update(main_table)
+
+    # Show legend
+    console.print("\n[bold]Legend:[/bold]")
+    console.print("  [green]✓[/green] Success")
+    console.print("  [red]✗[/red] Failure")
+    console.print("  [yellow]⚠[/yellow] SSH service responding, authentication failed")
+    console.print("  [yellow]⏱[/yellow] Timeout")
+    console.print("  [yellow]☁[/yellow] Cloudflare CDN blocked")
+    console.print("  [dim]N/A[/dim] Test not applicable")
+
+
+def _test_connectivity_with_progress(servers: List[Dict[str, Any]], tester, username: Optional[str], verbose: bool, console) -> None:
+    """Test connectivity with progress bar and final results table."""
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+    from rich.table import Table
+
+    # Create the results table
+    table = Table(title="Server Connectivity Test Results")
+    table.add_column("Server", style="cyan", no_wrap=True)
+    table.add_column("URL Test", justify="center")
+    table.add_column("SSH Port", justify="center")
+    table.add_column("SSH Shell", justify="center")
+    if verbose:
+        table.add_column("Details", style="dim")
+    table.add_column("VPN Address", style="dim")
+
+    # Set up progress tracking
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        # Create main progress task
+        main_task = progress.add_task(
+            "[cyan]Testing server connectivity...",
+            total=len(servers)
+        )
+
+        # Track current server being tested
+        current_task = progress.add_task(
+            "[dim]Preparing tests...",
+            total=None
+        )
+
+        for server in servers:
+            server_name = server.get("name", "Unknown")
+            server_url = server.get("url", "")
+            vpn_address = server.get("vpn_address", "")
+
+            # Update current server status
+            progress.update(
+                current_task,
+                description=f"[yellow]Testing {server_name}..."
+            )
+
+            # Test URL accessibility
+            progress.update(current_task, description=f"[yellow]Testing {server_name} - URL...")
+            url_result = tester.test_url(server_url) if server_url else "N/A"
+
+            # Test SSH port connectivity
+            progress.update(current_task, description=f"[yellow]Testing {server_name} - SSH Port...")
+            ssh_port_result = tester.test_ssh_port(vpn_address) if vpn_address else "N/A"
+
+            # Test SSH shell access with specified or auto-detected username
+            progress.update(current_task, description=f"[yellow]Testing {server_name} - SSH Shell...")
+            if vpn_address:
+                ssh_shell_result = tester.test_ssh_shell(vpn_address, username=username, verbose=verbose)
+            else:
+                ssh_shell_result = "N/A"
+
+            # Build row data
+            row_data = [
+                server_name,
+                url_result,
+                ssh_port_result,
+                ssh_shell_result,
+            ]
+
+            if verbose:
+                # Add details about the test results and SSH details
+                details = []
+                if server_url and url_result != "N/A":
+                    details.append(f"URL: {server_url}")
+                if vpn_address:
+                    details.append(f"SSH: {vpn_address}:22")
+
+                    # Get SSH-specific details if available
+                    ssh_details = tester.get_last_ssh_details()
+                    if ssh_details:
+                        if ssh_details.get("successful_username"):
+                            details.append(f"User: {ssh_details['successful_username']}")
+                        elif ssh_details.get("attempted_usernames"):
+                            attempted = ", ".join(ssh_details["attempted_usernames"][:3])  # Limit to first 3
+                            if len(ssh_details["attempted_usernames"]) > 3:
+                                attempted += "..."
+                            details.append(f"Tried: {attempted}")
+
+                        if ssh_details.get("auth_methods_tried"):
+                            auth_methods = ", ".join(set(ssh_details["auth_methods_tried"]))
+                            details.append(f"Auth: {auth_methods}")
+
+                details_str = " | ".join(details) if details else "No details"
+                row_data.append(details_str)
+
+            row_data.append(vpn_address or "None")
+            table.add_row(*row_data)
+
+            # Update progress and show completion status
+            progress.update(main_task, advance=1)
+            progress.update(
+                current_task,
+                description=f"[green]✓[/green] {server_name} completed"
+            )
+
+        # Final status
+        progress.update(current_task, description="[green]All tests completed!")
+
+    # Show final results table
+    console.print("\n")
+    console.print(table)
+
+    # Show legend
+    console.print("\n[bold]Legend:[/bold]")
+    console.print("  [green]✓[/green] Success")
+    console.print("  [red]✗[/red] Failure")
+    console.print("  [yellow]⚠[/yellow] SSH service responding, authentication failed")
+    console.print("  [yellow]⏱[/yellow] Timeout")
+    console.print("  [yellow]☁[/yellow] Cloudflare CDN blocked")
+    console.print("  [dim]N/A[/dim] Test not applicable")

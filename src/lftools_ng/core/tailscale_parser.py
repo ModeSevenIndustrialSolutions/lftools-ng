@@ -97,6 +97,33 @@ class TailscaleParser:
             logger.warning("Tailscale command not found")
             return {}
 
+    def get_tailscale_status_text(self) -> str:
+        """Get Tailscale status information in text format.
+
+        Returns:
+            String containing Tailscale status output.
+        """
+        try:
+            result = subprocess.run(
+                [self.tailscale_command, "status"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                logger.warning(f"Tailscale status command failed: {result.stderr}")
+                return ""
+
+            return result.stdout
+
+        except subprocess.TimeoutExpired:
+            logger.warning("Tailscale status command timed out")
+            return ""
+        except FileNotFoundError:
+            logger.warning("Tailscale command not found")
+            return ""
+
     def parse_vpn_servers(self, status_data: Optional[Dict[str, Any]] = None) -> List[Server]:
         """Parse VPN servers from Tailscale status.
 
@@ -330,14 +357,90 @@ class TailscaleParser:
         # Note: server_type is kept for potential future use in URL construction logic
         return ""
 
+    def parse_status_text_to_servers(self, status_text: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Parse Tailscale status text output to extract server information.
+
+        Args:
+            status_text: Optional status text. If None, will fetch from Tailscale.
+
+        Returns:
+            List of server dictionaries with name and vpn_address.
+        """
+        if status_text is None:
+            status_text = self.get_tailscale_status_text()
+
+        if not status_text:
+            return []
+
+        servers = []
+        lines = status_text.strip().split('\n')
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Parse lines like: "100.127.96.13   matts-macbook-air    mwatkins@    macOS   -"
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+
+            ip_address = parts[0]
+            hostname = parts[1]
+
+            # Skip if this doesn't look like an IP address
+            if not self._is_valid_ip(ip_address):
+                continue
+
+            # Skip if hostname doesn't look like infrastructure
+            if not self._is_infrastructure_server(hostname):
+                continue
+
+            servers.append({
+                "name": hostname,
+                "vpn_address": ip_address,
+                "status": " ".join(parts[2:]) if len(parts) > 2 else "online"
+            })
+
+        logger.info(f"Parsed {len(servers)} infrastructure servers from Tailscale status text")
+        return servers
+
+    def _is_valid_ip(self, ip_string: str) -> bool:
+        """Check if a string is a valid IP address.
+
+        Args:
+            ip_string: String to check
+
+        Returns:
+            True if valid IP address
+        """
+        try:
+            import ipaddress
+            ipaddress.ip_address(ip_string)
+            return True
+        except ValueError:
+            return False
+
     def get_available_servers(self) -> List[Dict[str, Any]]:
         """Get list of available servers in dictionary format.
 
         Returns:
             List of server dictionaries.
         """
-        servers = self.parse_vpn_servers()
-        return [server.to_dict() for server in servers]
+        # Try JSON format first
+        try:
+            servers = self.parse_vpn_servers()
+            if servers:
+                return [server.to_dict() for server in servers]
+        except Exception as e:
+            logger.debug(f"JSON parsing failed, trying text format: {e}")
+
+        # Fall back to text format parsing
+        try:
+            return self.parse_status_text_to_servers()
+        except Exception as e:
+            logger.warning(f"Both JSON and text parsing failed: {e}")
+            return []
 
     def _extract_project_from_hostname(self, hostname: str) -> List[str]:
         """Extract project name(s) from hostname using fuzzy matching.
