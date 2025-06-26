@@ -81,7 +81,7 @@ class LocalAuthManager:
                 timeout=10
             )
             return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
             return False
 
     @staticmethod
@@ -95,7 +95,7 @@ class LocalAuthManager:
                 timeout=10
             )
             return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
             return False
 
     @staticmethod
@@ -109,7 +109,7 @@ class LocalAuthManager:
                 timeout=10
             )
             return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
             return False
 
     @staticmethod
@@ -133,7 +133,7 @@ class LocalAuthManager:
                 timeout=10
             )
             return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
             return False
 
 
