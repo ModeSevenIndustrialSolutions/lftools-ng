@@ -514,6 +514,9 @@ def migrate_credentials(
     like GitHub, GitLab, 1Password, or UNIX pass. It supports filtering to migrate only
     specific credentials and provides options for name transformation.
 
+    For specialized repository credential migrations with project-aware URL mapping,
+    use the dedicated repository-migrate tool instead.
+
     Examples:
         # Migrate all credentials to GitHub
         lftools-ng jenkins migrate --source-server https://jenkins.example.com --source-user admin --source-password token --target github
@@ -523,6 +526,9 @@ def migrate_credentials(
 
         # Dry run to see what would be migrated
         lftools-ng jenkins migrate --source-server https://jenkins.example.com --source-user admin --source-password token --target pass --dry-run
+
+        # For repository deployment credentials, use the dedicated tool:
+        # python -m lftools_ng.commands.repository_migrate repository --jenkins-server https://jenkins.example.com --jenkins-user admin --jenkins-password token --project "MyProject" --filter-pattern "deployment"
     """
     try:
         console.print("[bold blue]Jenkins Credential Migration Tool[/bold blue]\n")

@@ -544,42 +544,92 @@ class OnePasswordCredentialProvider(CredentialProvider):
     def _create_op_item_template(self, credential: Credential) -> Dict[str, Any]:
         """Create 1Password item template from credential."""
         fields: List[Dict[str, Any]] = []
-        template = {
-            'title': credential.name,
-            'category': self._map_type_to_op_category(credential.type),
-            'vault': {'name': self.vault},
-            'notes': credential.description,
-            'fields': fields
-        }
 
-        # Add fields based on credential type
-        if credential.username:
-            fields.append({
-                'label': 'username',
-                'type': 'STRING',
-                'value': credential.username
-            })
+        # For LOGIN items, we need specific field labels
+        if credential.type == CredentialType.USERNAME_PASSWORD:
+            template = {
+                'title': credential.name,
+                'category': 'LOGIN',
+                'vault': {'name': self.vault},
+                'fields': fields
+            }
 
-        if credential.password:
-            fields.append({
-                'label': 'password',
-                'type': 'CONCEALED',
-                'value': credential.password
-            })
+            # Add username field
+            if credential.username:
+                fields.append({
+                    'label': 'username',
+                    'type': 'STRING',
+                    'value': credential.username
+                })
 
-        if credential.secret:
-            fields.append({
-                'label': 'secret',
-                'type': 'CONCEALED',
-                'value': credential.secret
-            })
+            # Add password field
+            if credential.password:
+                fields.append({
+                    'label': 'password',
+                    'type': 'CONCEALED',
+                    'value': credential.password
+                })
 
-        if credential.private_key:
-            fields.append({
-                'label': 'private key',
-                'type': 'STRING',
-                'value': credential.private_key
-            })
+            # Add notes field (description)
+            if credential.description:
+                fields.append({
+                    'label': 'notesPlain',
+                    'type': 'STRING',
+                    'value': credential.description
+                })
+
+            # Add website URL if available in metadata
+            if credential.metadata and 'github_url' in credential.metadata:
+                fields.append({
+                    'label': 'website',
+                    'type': 'URL',
+                    'value': credential.metadata['github_url']
+                })
+        else:
+            # For other types, use generic template
+            template = {
+                'title': credential.name,
+                'category': self._map_type_to_op_category(credential.type),
+                'vault': {'name': self.vault},
+                'fields': fields
+            }
+
+            # Add fields based on credential type
+            if credential.username:
+                fields.append({
+                    'label': 'username',
+                    'type': 'STRING',
+                    'value': credential.username
+                })
+
+            if credential.password:
+                fields.append({
+                    'label': 'password',
+                    'type': 'CONCEALED',
+                    'value': credential.password
+                })
+
+            if credential.secret:
+                fields.append({
+                    'label': 'secret',
+                    'type': 'CONCEALED',
+                    'value': credential.secret
+                })
+
+            if credential.private_key:
+                fields.append({
+                    'label': 'private key',
+                    'type': 'STRING',
+                    'value': credential.private_key
+                })
+
+            # Add notes field (description) for generic templates
+            if credential.description:
+                fields.append({
+                    'label': 'notesPlain',
+                    'type': 'STRING',
+                    'value': credential.description
+                })
 
         return template
 
