@@ -806,13 +806,13 @@ def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectMana
     """
     # First check if project data includes scm_platform or primary_scm
     scm_platform = project.get("scm_platform") or project.get("primary_scm")
-    if scm_platform:
+    if scm_platform and isinstance(scm_platform, str):
         # Capitalize for display consistency
         return scm_platform.capitalize()
 
     # Check if project data includes primary_scm_platform
     primary_scm_platform = project.get("primary_scm_platform")
-    if primary_scm_platform:
+    if primary_scm_platform and isinstance(primary_scm_platform, str):
         return primary_scm_platform
 
     # Fallback: Check if project has explicit gerrit_url configuration
@@ -829,18 +829,17 @@ def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectMana
     from lftools_ng.core.models import PROJECT_ALIASES
     
     project_name = project.get("name", "")
-    project_lower = project_name.lower()
-    for alias_key, alias_data in PROJECT_ALIASES.items():
-        if (project_lower == alias_data.get("primary_name", "").lower() or
-            project_lower in [alias.lower() for alias in alias_data.get("aliases", [])] or
-            any(project_lower == pattern.lower() for pattern in alias_data.get("name_patterns", []))):
-            scm_platform = alias_data.get("primary_scm_platform", "Unknown")
-            if scm_platform != "Unknown":
-                return scm_platform
+    if isinstance(project_name, str):
+        project_lower = project_name.lower()
+        for alias_key, alias_data in PROJECT_ALIASES.items():
+            if (project_lower == alias_data.get("primary_name", "").lower() or
+                project_lower in [alias.lower() for alias in alias_data.get("aliases", [])] or
+                any(project_lower == pattern.lower() for pattern in alias_data.get("name_patterns", []))):
+                scm_platform = alias_data.get("primary_scm_platform", "Unknown")
+                if scm_platform != "Unknown" and isinstance(scm_platform, str):
+                    return scm_platform
 
     # Final fallback
-    return "Unknown"
-
     return "Unknown"
 
 
