@@ -28,6 +28,14 @@ servers_app = typer.Typer(
 )
 projects_app.add_typer(servers_app, name="servers")
 
+# Create rebuild subcommand group
+rebuild_app = typer.Typer(
+    name="rebuild",
+    help="Rebuild project and server databases",
+    no_args_is_help=True,
+)
+projects_app.add_typer(rebuild_app, name="rebuild")
+
 console = Console()
 
 # Constants for configuration
@@ -111,8 +119,8 @@ def list_projects(
             github_org = project.get("github_mirror_org", "")
             enhanced_project["github_mirror_org_display"] = github_org if github_org else "Not found"
 
-            # Add computed source field
-            enhanced_project["source"] = _determine_project_source(project, manager)
+            # Add computed primary_scm field
+            enhanced_project["primary_scm"] = _determine_project_primary_scm(project, manager)
 
             enhanced_projects.append(enhanced_project)
 
@@ -136,7 +144,7 @@ def list_projects(
                 {"name": "Project", "field": "name", "style": "cyan"},
                 {"name": "Aliases", "field": "aliases_display", "style": "magenta"},
                 {"name": "GitHub Org", "field": "github_mirror_org_display", "style": "green"},
-                {"name": "Source", "field": "source", "style": "blue"}
+                {"name": "Primary SCM", "field": "primary_scm", "style": "blue"}
             ]
         }
 
@@ -407,7 +415,7 @@ def list_archived_repositories(
         raise typer.Exit(1)
 
 
-@projects_app.command("rebuild-projects")
+@rebuild_app.command("projects")
 def rebuild_projects_database(
     config_dir: Optional[str] = typer.Option(
         None, "--config-dir", "-c", help=CONFIG_DIR_HELP
@@ -439,7 +447,7 @@ def rebuild_projects_database(
         raise typer.Exit(1)
 
 
-@projects_app.command("rebuild-servers")
+@rebuild_app.command("servers")
 def rebuild_servers_database(
     config_dir: Optional[str] = typer.Option(
         None, "--config-dir", "-c", help=CONFIG_DIR_HELP
@@ -602,7 +610,7 @@ def _check_column_uniformity(projects: List[Dict[str, Any]], manager: ProjectMan
         columns["github_org"].append(github_org)
 
         # Get source
-        source = _determine_project_source(project, manager)
+        source = _determine_project_primary_scm(project, manager)
         columns["source"].append(source)
 
     # Check for uniformity
@@ -614,17 +622,22 @@ def _check_column_uniformity(projects: List[Dict[str, Any]], manager: ProjectMan
     return uniform_columns
 
 
-def _determine_project_source(project: Dict[str, Any], manager: ProjectManager) -> str:
-    """Determine the primary source repository type for a project.
+def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectManager) -> str:
+    """Determine the primary SCM (Source Code Management) platform for a project.
 
     Args:
         project: Project data dictionary
         manager: ProjectManager instance for accessing server data
 
     Returns:
-        Source type: "Gerrit", "GitHub", or "Unknown"
+        Primary SCM platform: "Gerrit", "GitHub", "GitLab", "Git", or "Unknown"
     """
     project_name = project.get("name", "")
+
+    # First check if project data already includes primary_scm_platform
+    primary_scm_platform = project.get("primary_scm_platform")
+    if primary_scm_platform:
+        return primary_scm_platform
 
     # Check if project has an active Gerrit server - this is the definitive indicator
     try:
@@ -667,10 +680,28 @@ def _determine_project_source(project: Dict[str, Any], manager: ProjectManager) 
     if gerrit_url:
         return "Gerrit"
 
-    # Default to GitHub if we have a GitHub org, otherwise Unknown
+    # Check for GitHub organization
     github_org = project.get("github_mirror_org")
     if github_org:
-        return "GitHub"
+        # For GitHub orgs, we need to determine if it's primary or just a mirror
+        # Check if the project explicitly has a gerrit_url - if so, GitHub is just a mirror
+        if gerrit_url:
+            return "Gerrit"  # Gerrit is primary, GitHub is mirror
+        else:
+            return "GitHub"  # GitHub is primary
+
+    # Last resort: check PROJECT_ALIASES for fall-through projects
+    from lftools_ng.core.models import PROJECT_ALIASES
+
+    # Try to find the project in aliases by name matching
+    project_lower = project_name.lower()
+    for alias_key, alias_data in PROJECT_ALIASES.items():
+        if (project_lower == alias_data.get("primary_name", "").lower() or
+            project_lower in [alias.lower() for alias in alias_data.get("aliases", [])] or
+            any(project_lower == pattern.lower() for pattern in alias_data.get("name_patterns", []))):
+            scm_platform = alias_data.get("primary_scm_platform", "Unknown")
+            if scm_platform != "Unknown":
+                return scm_platform
 
     return "Unknown"
 

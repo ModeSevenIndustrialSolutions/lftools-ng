@@ -669,6 +669,11 @@ def migrate_credentials(
                 cred.target_platform = target_platform
                 cred.target_id = cred.id
 
+                # Add migration metadata for origin/source field (STRING type for 1Password)
+                if cred.metadata is None:
+                    cred.metadata = {}
+                cred.metadata["migration_origin"] = "Migrated from Jenkins"
+
                 # Attempt migration
                 if target_provider.create_credential(cred):
                     console.print(f"  [green]✓[/green] {cred.id}")

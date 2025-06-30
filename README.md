@@ -261,6 +261,36 @@ By default, lftools-ng stores configuration in:
 - `projects.yaml`: Project definitions and Jenkins server mappings
 - `servers.yaml`: Jenkins server configurations
 
+#### Automatic Initialization
+
+When you first run a command that requires server data (e.g., `lftools-ng projects servers list`),
+the tool will automatically detect if the `servers.yaml` file is missing and prompt you to create
+an initial database:
+
+```bash
+$ lftools-ng projects servers list
+
+⚠️  No servers database found!
+Expected location: ~/.config/lftools-ng/servers.yaml
+
+The servers database contains information about Jenkins servers,
+Gerrit instances, Nexus repositories, and other infrastructure.
+
+Would you like to create an initial servers database?
+This will help you get started with basic server configurations.
+
+Initialize servers database [y/n]: y
+
+✓ Created initial servers database at: ~/.config/lftools-ng/servers.yaml
+```
+
+The initial database contains sample entries that you can customize:
+
+- Add your actual server configurations
+- Update VPN addresses and other details
+- Remove sample entries
+- Use `lftools-ng projects rebuild-servers` to populate from existing data sources
+
 ### Environment Variables
 
 - `JENKINS_URL`: Default Jenkins server URL

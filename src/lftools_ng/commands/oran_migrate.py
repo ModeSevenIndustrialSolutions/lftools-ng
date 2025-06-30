@@ -260,7 +260,8 @@ class ProjectAwareMigrationManager:
                 "github_url": mapping.github_url,
                 "project": mapping.project,
                 "migration_source": mapping.jenkins_credential_id,
-                "migration_type": "repository_deployment"
+                "migration_type": "repository_deployment",
+                "migration_origin": "Migrated from Jenkins"  # This will create the origin/source field as STRING type
             }
         )
 

@@ -1,421 +1,173 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
-
----
-# Linux Foundation Repositories Database
-# This file contains comprehensive repository data for all major Linux Foundation projects
+#
+# Pre-built repositories database for lftools-ng
+# This contains public repository information that can be safely bundled
+# Last updated: 2025-06-30
 
 repositories:
-  # ONAP Repositories
-  - project: "ONAP"
-    gerrit_path: "aai/aai-common"
-    github_name: "aai-aai-common"
-    description: "ONAP AAI Common modules"
+  - name: "aimlfw-dep"
+    project: "O-RAN-SC"
+    github_url: "https://github.com/o-ran-sc/aimlfw-dep"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "AI/ML Framework Dependencies"
 
-  - project: "ONAP"
-    gerrit_path: "aai/babel"
-    github_name: "aai-babel"
-    description: "ONAP AAI Babel artifact translator"
+  - name: "com-log"
+    project: "O-RAN-SC"
+    github_url: "https://github.com/o-ran-sc/com-log"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Common Logging Framework"
 
-  - project: "ONAP"
-    gerrit_path: "so/so"
-    github_name: "so"
-    description: "ONAP Service Orchestrator"
+  - name: "com-pylog"
+    project: "O-RAN-SC"
+    github_url: "https://github.com/o-ran-sc/com-pylog"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Python Logging Framework"
 
-  - project: "ONAP"
-    gerrit_path: "dmaap/messagerouter/messageservice"
-    github_name: "dmaap-messagerouter-messageservice"
-    description: "ONAP DMaaP Message Router Service"
+  - name: "nonrtric"
+    project: "O-RAN-SC"
+    github_url: "https://github.com/o-ran-sc/nonrtric"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Non-Real-Time RIC"
 
-  - project: "ONAP"
-    gerrit_path: "policy/engine"
-    github_name: "policy-engine"
-    description: "ONAP Policy Engine"
-    archived: true
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "ONAP"
-    gerrit_path: "sdc/sdc-workflow-designer"
-    github_name: "sdc-sdc-workflow-designer"
-    description: "ONAP SDC Workflow Designer"
+  - name: "ric-plt-e2"
+    project: "O-RAN-SC"
+    github_url: "https://github.com/o-ran-sc/ric-plt-e2"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "RIC Platform E2 Interface"
 
-  # OpenDaylight Repositories
-  - project: "OpenDaylight"
-    gerrit_path: "controller"
-    github_name: "controller"
+  - name: "smo-o1"
+    project: "O-RAN-SC"
+    github_url: "https://github.com/o-ran-sc/smo-o1"
+    archived: false
+    description: "SMO O1 Interface"
+
+  - name: "aai-aai-common"
+    project: "ONAP"
+    github_url: "https://github.com/onap/aai-aai-common"
+    archived: false
+    description: "A&AI Common Libraries"
+
+  - name: "aai-babel"
+    project: "ONAP"
+    github_url: "https://github.com/onap/aai-babel"
+    archived: false
+    description: "A&AI Babel Microservice"
+
+  - name: "dmaap-messagerouter-messageservice"
+    project: "ONAP"
+    github_url: "https://github.com/onap/dmaap-messagerouter-messageservice"
+    archived: false
+    description: "DMaaP Message Router"
+
+  - name: "policy-engine"
+    project: "ONAP"
+    github_url: "https://github.com/onap/policy-engine"
+    archived: false
+    description: "Policy Framework Engine"
+
+  - name: "so-so"
+    project: "ONAP"
+    github_url: "https://github.com/onap/so"
+    archived: false
+    description: "Service Orchestrator"
+
+  - name: "bgpcep"
+    project: "OpenDaylight"
+    github_url: "https://github.com/opendaylight/bgpcep"
+    archived: false
+    description: "BGP/PCEP Implementation"
+
+  - name: "controller"
+    project: "OpenDaylight"
+    github_url: "https://github.com/opendaylight/controller"
+    archived: false
     description: "OpenDaylight Controller"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
 
-  - project: "OpenDaylight"
-    gerrit_path: "odlparent"
-    github_name: "odlparent"
-    description: "OpenDaylight Parent"
+  - name: "netconf"
+    project: "OpenDaylight"
+    github_url: "https://github.com/opendaylight/netconf"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "NETCONF Implementation"
 
-  - project: "OpenDaylight"
-    gerrit_path: "yangtools"
-    github_name: "yangtools"
-    description: "OpenDaylight YANG Tools"
+  - name: "openflowplugin"
+    project: "OpenDaylight"
+    github_url: "https://github.com/opendaylight/openflowplugin"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "OpenFlow Plugin"
 
-  - project: "OpenDaylight"
-    gerrit_path: "mdsal"
-    github_name: "mdsal"
-    description: "OpenDaylight Model-Driven Service Abstraction Layer"
+  - name: "agl-demo-platform"
+    project: "AGL"
+    github_url: "https://github.com/automotive-grade-linux/agl-demo-platform"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "AGL Demo Platform"
 
-  - project: "OpenDaylight"
-    gerrit_path: "netconf"
-    github_name: "netconf"
-    description: "OpenDaylight NETCONF"
+  - name: "meta-agl"
+    project: "AGL"
+    github_url: "https://github.com/automotive-grade-linux/meta-agl"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "AGL Yocto Layer"
 
-  # Anuket (OPNFV) Repositories
-  - project: "Anuket"
-    gerrit_path: "releng"
-    github_name: "releng"
-    description: "Anuket Release Engineering"
+  - name: "airship-in-a-bottle"
+    project: "Akraino"
+    github_url: "https://github.com/akraino-edge-stack/airship-in-a-bottle"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Airship in a Bottle"
 
-  - project: "Anuket"
-    gerrit_path: "functest"
-    github_name: "functest"
-    description: "Anuket Functional Testing"
+  - name: "icn"
+    project: "Akraino"
+    github_url: "https://github.com/akraino-edge-stack/icn"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Integrated Cloud Native"
 
-  - project: "Anuket"
-    gerrit_path: "yardstick"
-    github_name: "yardstick"
-    description: "Anuket Yardstick benchmarking"
+  - name: "app-service-configurable"
+    project: "EdgeX"
+    github_url: "https://github.com/edgexfoundry/app-service-configurable"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "EdgeX App Service Configurable"
 
-  - project: "Anuket"
-    gerrit_path: "vswitchperf"
-    github_name: "vswitchperf"
-    description: "Anuket VSwitch Performance Testing"
-    archived: true
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Anuket"
-    gerrit_path: "pharos"
-    github_name: "pharos"
-    description: "Anuket Pharos Lab Management"
+  - name: "core-data"
+    project: "EdgeX"
+    github_url: "https://github.com/edgexfoundry/core-data"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "EdgeX Core Data Service"
 
-  # O-RAN-SC Repositories
-  - project: "O-RAN-SC"
-    gerrit_path: "ric-plt/e2mgr"
-    github_name: "ric-plt-e2mgr"
-    description: "O-RAN SC RIC Platform E2 Manager"
+  - name: "device-sdk-go"
+    project: "EdgeX"
+    github_url: "https://github.com/edgexfoundry/device-sdk-go"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "EdgeX Device SDK for Go"
 
-  - project: "O-RAN-SC"
-    gerrit_path: "ric-plt/rtmgr"
-    github_name: "ric-plt-rtmgr"
-    description: "O-RAN SC RIC Platform Routing Manager"
+  - name: "vpp"
+    project: "FD.io"
+    github_url: "https://github.com/FDio/vpp"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Vector Packet Processing"
 
-  - project: "O-RAN-SC"
-    gerrit_path: "ric-app/ts"
-    github_name: "ric-app-ts"
-    description: "O-RAN SC RIC Application Traffic Steering"
+  - name: "csit"
+    project: "FD.io"
+    github_url: "https://github.com/FDio/csit"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Continuous System Integration and Testing"
 
-  - project: "O-RAN-SC"
-    gerrit_path: "sim/o1-interface"
-    github_name: "sim-o1-interface"
-    description: "O-RAN SC O1 Interface Simulator"
+  - name: "hc2vpp"
+    project: "FD.io"
+    github_url: "https://github.com/FDio/hc2vpp"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Honeycomb for VPP"
 
-  # FD.io Repositories
-  - project: "FD.io"
-    gerrit_path: "vpp"
-    github_name: "vpp"
-    description: "FD.io Vector Packet Processing"
+  - name: "functest"
+    project: "OPNFV"
+    github_url: "https://github.com/opnfv/functest"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Functional Testing Framework"
 
-  - project: "FD.io"
-    gerrit_path: "csit"
-    github_name: "csit"
-    description: "FD.io Continuous System Integration and Testing"
+  - name: "releng"
+    project: "OPNFV"
+    github_url: "https://github.com/opnfv/releng"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    description: "Release Engineering"
 
-  - project: "FD.io"
-    gerrit_path: "honeycomb"
-    github_name: "honeycomb"
-    description: "FD.io Honeycomb"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "FD.io"
-    gerrit_path: "hc2vpp"
-    github_name: "hc2vpp"
-    description: "FD.io Honeycomb to VPP Translation Layer"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # EdgeX Foundry Repositories
-  - project: "EdgeX Foundry"
-    gerrit_path: null
-    github_name: "edgex-go"
-    description: "EdgeX Foundry Core Services (Go)"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "EdgeX Foundry"
-    gerrit_path: null
-    github_name: "device-sdk-go"
-    description: "EdgeX Foundry Device SDK for Go"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "EdgeX Foundry"
-    gerrit_path: null
-    github_name: "app-functions-sdk-go"
-    description: "EdgeX Foundry Application Functions SDK for Go"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "EdgeX Foundry"
-    gerrit_path: null
-    github_name: "edgex-ui-go"
-    description: "EdgeX Foundry UI (Go)"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # Akraino Repositories
-  - project: "Akraino"
-    gerrit_path: "kni/installer"
-    github_name: "kni-installer"
-    description: "Akraino KNI Installer"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Akraino"
-    gerrit_path: "icn"
-    github_name: "icn"
-    description: "Akraino Integrated Cloud Native"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Akraino"
-    gerrit_path: "ta/build-tools"
-    github_name: "ta-build-tools"
-    description: "Akraino TA Build Tools"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # CORD Repositories
-  - project: "CORD"
-    gerrit_path: "orchestration/xos"
-    github_name: "xos"
-    description: "CORD XOS Orchestration Platform"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "CORD"
-    gerrit_path: "platform/voltha"
-    github_name: "voltha"
-    description: "CORD VOLTHA Virtual OLT Hardware Abstraction"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "CORD"
-    gerrit_path: "automation/kubernetes"
-    github_name: "automation-kubernetes"
-    description: "CORD Kubernetes Automation"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # Automotive Grade Linux Repositories
-  - project: "Automotive Grade Linux"
-    gerrit_path: "meta-agl"
-    github_name: "meta-agl"
-    description: "AGL Core Yocto Layer"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Automotive Grade Linux"
-    gerrit_path: "meta-agl-demo"
-    github_name: "meta-agl-demo"
-    description: "AGL Demo Yocto Layer"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Automotive Grade Linux"
-    gerrit_path: "agl-service-can-low-level"
-    github_name: "agl-service-can-low-level"
-    description: "AGL CAN Low Level Service"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # Yocto Project Repositories
-  - project: "Yocto Project"
-    gerrit_path: null
-    github_name: "poky"
-    description: "Yocto Project Reference Distribution"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Yocto Project"
-    gerrit_path: null
-    github_name: "meta-openembedded"
-    description: "Yocto Project OpenEmbedded Layers"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Yocto Project"
-    gerrit_path: null
-    github_name: "bitbake"
-    description: "Yocto Project BitBake Build Tool"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # Civil Infrastructure Platform Repositories
-  - project: "Civil Infrastructure Platform"
-    gerrit_path: "cip-kernel/cip-kernel"
-    github_name: "cip-kernel"
-    description: "CIP Linux Kernel"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Civil Infrastructure Platform"
-    gerrit_path: "cip-testing/kernelci-backend"
-    github_name: "kernelci-backend"
-    description: "CIP KernelCI Backend"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # CNCF Repositories (subset)
-  - project: "CNCF"
-    gerrit_path: null
-    github_name: "kubernetes"
-    description: "Production-Grade Container Orchestration"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "CNCF"
-    gerrit_path: null
-    github_name: "prometheus"
-    description: "The Prometheus monitoring system and time series database"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "CNCF"
-    gerrit_path: null
-    github_name: "envoy"
-    description: "Cloud-native high-performance edge/middle/service proxy"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # Hyperledger Repositories
-  - project: "Hyperledger"
-    gerrit_path: "fabric"
-    github_name: "fabric"
-    description: "Hyperledger Fabric"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Hyperledger"
-    gerrit_path: "sawtooth-core"
-    github_name: "sawtooth-core"
-    description: "Hyperledger Sawtooth Core"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "Hyperledger"
-    gerrit_path: "indy-node"
-    github_name: "indy-node"
-    description: "Hyperledger Indy Node"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  # LF Energy Repositories
-  - project: "LF Energy"
-    gerrit_path: "powsybl/powsybl-core"
-    github_name: "powsybl-core"
-    description: "LF Energy PowSyBl Core"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
-
-  - project: "LF Energy"
-    gerrit_path: "egeria"
-    github_name: "egeria"
-    description: "LF Energy Egeria Open Metadata and Governance"
-    archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+total: 30
+active: 30
+archived: 0

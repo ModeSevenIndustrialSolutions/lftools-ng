@@ -397,5 +397,8 @@ class CredentialManager:
         if options.preserve_metadata and migrated.metadata is not None:
             migrated.metadata["migration_source"] = credential.source_platform
             migrated.metadata["migration_date"] = str(datetime.now().isoformat())
+            # Add migration origin for 1Password origin/source field (STRING type)
+            if credential.source_platform == "jenkins":
+                migrated.metadata["migration_origin"] = "Migrated from Jenkins"
 
         return migrated

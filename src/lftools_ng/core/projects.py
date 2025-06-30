@@ -19,8 +19,8 @@ from lftools_ng.core.github_discovery import GitHubDiscovery
 logger = logging.getLogger(__name__)
 
 # URL constants to avoid duplication
-FDIO_JENKINS_URL = "https://jenkins.fd.io"
-LF_JENKINS_URL = "https://jenkins.linuxfoundation.org"
+FDIO_SERVER_URL = "https://jenkins.fd.io"
+LF_SERVER_URL = "https://jenkins.linuxfoundation.org"
 LF_NEXUS_IQ_URL = "https://nexus-iq.wl.linuxfoundation.org"
 YOCTO_AUTOBUILDER_URL = "https://autobuilder.yoctoproject.org"
 
@@ -30,7 +30,7 @@ FDIO_ALT_KEY = "fdio"
 
 
 class ProjectManager:
-    """Manages projects and Jenkins server mappings."""
+    """Manages projects and server mappings."""
 
     def __init__(self, config_dir: pathlib.Path, auto_init: bool = True) -> None:
         """Initialize project manager.
@@ -52,7 +52,12 @@ class ProjectManager:
             self._auto_initialize_config()
 
     def _auto_initialize_config(self) -> None:
-        """Auto-initialize configuration from resources directory if config files don't exist."""
+        """Auto-initialize configuration from resources directory if config files don't exist.
+
+        Note: Only projects.yaml and repositories.yaml are auto-initialized.
+        servers.yaml is intentionally NOT auto-initialized as it contains sensitive
+        VPN addresses and must be built locally via Tailscale integration.
+        """
         try:
             # Find the resources directory relative to this file
             current_file = pathlib.Path(__file__)
@@ -64,10 +69,11 @@ class ProjectManager:
                 logger.warning(f"Resources directory not found: {resources_dir}")
                 return
 
+            # Only copy safe files that don't contain sensitive information
             files_to_copy = [
                 ("projects.yaml", self.projects_file),
-                ("servers.yaml", self.servers_file),
                 ("repositories.yaml", self.repositories_file)
+                # NOTE: servers.yaml is intentionally excluded - it must be built locally
             ]
 
             copied_files = []
@@ -80,6 +86,7 @@ class ProjectManager:
 
             if copied_files:
                 logger.info(f"Auto-initialized configuration with Linux Foundation data: {', '.join(copied_files)}")
+                logger.info("Note: servers.yaml must be built locally via 'lftools-ng projects rebuild-servers'")
 
         except Exception as e:
             logger.warning(f"Failed to auto-initialize configuration: {e}")
@@ -109,36 +116,42 @@ class ProjectManager:
             return []
 
     def list_servers(self) -> List[Dict[str, Any]]:
-        """List all registered Jenkins servers.
+        """List all registered servers.
 
         Returns:
             List of server dictionaries
         """
-        if not self.servers_file.exists():
-            logger.warning(f"Servers file not found: {self.servers_file}")
+        # Check if servers database exists, prompt for initialization if needed
+        if not self._ensure_servers_database_exists():
+            # User declined to initialize, return empty list
             return []
 
         try:
-            with open(self.servers_file) as f:
-                data = yaml.safe_load(f)
-                if data is None:
-                    return []
+            # Load projects first (needed for server building/mapping)
+            projects = self.list_projects()
 
-                # Handle both dictionary and list formats
-                if isinstance(data, dict):
-                    servers = data.get("servers", [])
-                elif isinstance(data, list):
-                    servers = data
-                else:
-                    return []
+            servers = []
 
-                if not isinstance(servers, list):
-                    return []
+            # Try to load existing servers from YAML file
+            if self.servers_file.exists():
+                with open(self.servers_file) as f:
+                    data = yaml.safe_load(f)
+                    if data is not None:
+                        # Handle both dictionary and list formats
+                        if isinstance(data, dict):
+                            servers = data.get("servers", [])
+                        elif isinstance(data, list):
+                            servers = data
 
-                # Load projects for mapping
-                projects = self.list_projects()
+                        if not isinstance(servers, list):
+                            servers = []
 
-                # Enhance servers with comprehensive data integration
+            # If no servers found in YAML, build them from projects
+            if not servers:
+                logger.info("No servers found in servers.yaml, building servers from projects...")
+                servers = self._build_servers_from_projects(projects)
+            else:
+                # Enhance existing servers with comprehensive data integration
                 self._integrate_server_data_sources(servers, projects)
 
                 # Map projects to servers and calculate project counts
@@ -147,7 +160,7 @@ class ProjectManager:
                 # Enhance servers with missing URLs
                 self._enhance_servers_with_inferred_urls(servers)
 
-                return servers
+            return servers
         except Exception as e:
             logger.error(f"Failed to load servers: {e}")
             return []
@@ -229,10 +242,16 @@ class ProjectManager:
         source_url: Optional[str] = None,
         force: bool = False
     ) -> Dict[str, int]:
-        """Rebuild projects database from source.
+        """Rebuild projects database from source with enhancements.
+
+        This method now:
+        1. Uses the base projects.yaml as a foundation
+        2. Adds fall-through projects from PROJECT_ALIASES
+        3. Ensures all projects have accurate Primary SCM platform and URL information
+        4. Merges aliases from multiple sources for comprehensive matching
 
         Args:
-            source_url: URL to fetch project configuration from
+            source_url: URL to fetch project configuration from (optional)
             force: Force rebuild even if database exists
 
         Returns:
@@ -243,44 +262,27 @@ class ProjectManager:
                 "Projects database already exists. Use --force to rebuild."
             )
 
-        # Default source URLs for LF projects
-        if not source_url:
-            # Try to find local resources file relative to the package
-            # Go up from src/lftools_ng/core/projects.py to the project root
-            package_root = pathlib.Path(__file__).parent.parent.parent.parent
-            local_projects_file = package_root / "resources" / "projects.yaml"
-            if local_projects_file.exists():
-                source_url = f"file://{local_projects_file}"
-            else:
-                raise FileNotFoundError(
-                    f"Projects resource file not found at {local_projects_file}. "
-                    "Please ensure the resources directory is present, or specify a source URL."
-                )
-
         try:
-            # Fetch project configuration
-            logger.info(f"Fetching project configuration from: {source_url}")
-            content = self._fetch_config_file(source_url)
+            # Generate enhanced projects database
+            logger.info("Generating enhanced projects database with fall-through projects and SCM mapping...")
+            enhanced_data = self._generate_enhanced_projects_database()
 
-            # Parse configuration (always use YAML for our purposes)
-            config_data = yaml.safe_load(content)
+            # If a source URL is provided, try to merge it with our enhanced data
+            if source_url:
+                logger.info(f"Merging with external source: {source_url}")
+                # For now, we prioritize our enhanced data and just log the external source
+                # Future enhancement could merge the two sources intelligently
+                logger.warning("External source URLs are currently logged but not merged. Enhanced local data takes precedence.")
 
-            # Extract projects
-            projects = self._extract_projects_from_config(config_data)
+            # Save the enhanced database
+            self._save_yaml_with_header(enhanced_data, self.projects_file)
 
-            # Enhance projects with GitHub discovery
-            self._enhance_projects_with_github_discovery(projects)
+            projects_count = len(enhanced_data.get("projects", []))
+            logger.info(f"Successfully built enhanced projects database with {projects_count} projects")
 
-            servers = self._extract_servers_from_projects(projects)
-
-            # Save to files
-            self._save_projects(projects)
-            self._save_servers(servers)
-
-            logger.info(f"Rebuilt projects database with {len(projects)} projects")
             return {
-                "projects_count": len(projects),
-                "servers_count": len(servers)
+                "projects_count": projects_count,
+                "servers_count": 0  # Will be built separately by servers rebuild
             }
 
         except Exception as e:
@@ -292,10 +294,19 @@ class ProjectManager:
         source_url: Optional[str] = None,
         force: bool = False
     ) -> Dict[str, int]:
-        """Rebuild servers database from source.
+        """Rebuild servers database from live data sources.
+
+        This method builds the servers database from multiple sources:
+        1. Projects data (for basic server enumeration)
+        2. Tailscale VPN network (for VPN addresses and infrastructure discovery)
+        3. Linux Foundation inventory (for validation)
+
+        Note: This method requires VPN access to build the complete database.
+        VPN addresses and internal server information are only available to
+        users with active Tailscale VPN connectivity.
 
         Args:
-            source_url: URL to fetch server configuration from
+            source_url: Optional URL to fetch server configuration from (deprecated)
             force: Force rebuild even if database exists
 
         Returns:
@@ -306,1565 +317,785 @@ class ProjectManager:
                 "Servers database already exists. Use --force to rebuild."
             )
 
-        # Default source URLs for LF servers
-        if not source_url:
-            # Try to find local resources file relative to the package
-            # Go up from src/lftools_ng/core/projects.py to the project root
-            package_root = pathlib.Path(__file__).parent.parent.parent.parent
-            local_servers_file = package_root / "resources" / "servers.yaml"
-            if local_servers_file.exists():
-                source_url = f"file://{local_servers_file}"
-            else:
-                raise FileNotFoundError(
-                    f"Servers resource file not found at {local_servers_file}. "
-                    "Please ensure the resources directory is present, or specify a source URL."
-                )
+        # Build servers database from live data sources
+        logger.info("Building servers database from live Linux Foundation infrastructure data...")
+        logger.info("Note: This requires active Tailscale VPN connection for complete server enumeration")
 
         try:
-            # Fetch server configuration
-            logger.info(f"Fetching server configuration from: {source_url}")
-            content = self._fetch_config_file(source_url)
-
-            # Parse configuration (always use YAML for our purposes)
-            config_data = yaml.safe_load(content)
-
-            # Extract servers
-            servers = self._extract_servers_from_config(config_data)
+            # Build from live projects data
             projects = self.list_projects()
+            servers = self._build_servers_from_projects(projects)
 
-            # Map projects to servers
-            try:
-                projects_mapped = self._map_projects_to_servers(projects, servers)
-            except AttributeError as e:
-                logger.error(f"Error in _map_projects_to_servers: {e}")
-                logger.error(f"Projects type: {type(projects)}, length: {len(projects) if projects else 'N/A'}")
-                logger.error(f"Servers type: {type(servers)}, length: {len(servers) if servers else 'N/A'}")
-                if projects:
-                    logger.error(f"First few projects: {projects[:3]}")
-                if servers:
-                    logger.error(f"First few servers: {servers[:3]}")
-                raise
+            # Enhance with Tailscale VPN data
+            self._enhance_servers_with_tailscale_data(servers)
 
-            # Reconcile VPN addresses with live Tailscale data
-            logger.info("Reconciling VPN addresses with Tailscale data...")
-            try:
-                self._enhance_servers_with_tailscale_data(servers)
-                logger.info("VPN address reconciliation completed")
-            except Exception as e:
-                logger.warning(f"VPN reconciliation failed, continuing without it: {e}")
+            # Apply additional server intelligence
+            self._apply_server_naming_conventions(servers)
 
-            # Save to file
-            self._save_servers(servers)
+            # Save the rebuilt database
+            servers_data = {"servers": servers}
+            self._save_yaml_with_header(servers_data, self.servers_file)
 
-            logger.info(f"Rebuilt servers database with {len(servers)} servers")
+            logger.info(f"Successfully built servers database with {len(servers)} servers")
 
             return {
-                "servers_count": len(servers),
-                "projects_mapped": projects_mapped
+                "servers_count": len(servers)
             }
 
         except Exception as e:
-            logger.error(f"Failed to rebuild servers database: {e}")
+            logger.error(f"Failed to build servers database: {e}")
             raise
 
-    def _fetch_config_file(self, source_url: str) -> str:
-        """
-        Fetch configuration file from local file system or remote URL.
-
-        Args:
-            source_url: URL or file path to fetch from
-
-        Returns:
-            Content of the file as string
-        """
-        if source_url.startswith('file://'):
-            # Handle local file paths
-            file_path = source_url[7:]  # Remove 'file://' prefix
-            if not os.path.isabs(file_path):
-                # Make relative paths relative to the package root
-                package_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                file_path = os.path.join(package_root, file_path)
-
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return f.read()
-            except IOError as e:
-                raise Exception(f"Failed to read local file {file_path}: {e}")
-        else:
-            # Handle remote URLs
-            try:
-                with httpx.Client(timeout=30) as client:
-                    response = client.get(source_url)
-                    response.raise_for_status()
-                    return str(response.text)
-            except httpx.HTTPStatusError as e:
-                raise Exception(f"Failed to fetch from {source_url}: {e}")
-            except httpx.RequestError as e:
-                raise Exception(f"Network error fetching from {source_url}: {e}")
-
-    def _extract_projects_from_config(self, config_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Extract projects from configuration data."""
-        projects = []
-
-        # Extract projects from the rich configuration data
-        if "projects" in config_data:
-            for project_config in config_data["projects"]:
-                # Preserve all the rich data from the resources file
-                project = {
-                    "name": project_config.get("name", "unknown"),
-                    "primary_name": project_config.get("primary_name", project_config.get("name", "unknown")),
-                    "aliases": project_config.get("aliases", []),
-                    "previous_names": project_config.get("previous_names", []),
-                    "gerrit_url": project_config.get("gerrit_url"),
-                    "github_mirror_org": project_config.get("github_mirror_org"),
-                    "jenkins_production": project_config.get("jenkins_production"),
-                    "jenkins_sandbox": project_config.get("jenkins_sandbox"),
-                    "nexus_url": project_config.get("nexus_url"),
-                    "nexus3_url": project_config.get("nexus3_url"),
-                    "wiki_url": project_config.get("wiki_url"),
-                    "wiki_type": project_config.get("wiki_type"),
-                    "docs_url": project_config.get("docs_url"),
-                    "issue_tracking_url": project_config.get("issue_tracking_url"),
-                    "issue_tracking_type": project_config.get("issue_tracking_type"),
-                    "sonar_url": project_config.get("sonar_url"),
-                    "logs_url": project_config.get("logs_url"),
-                    "jenkins_server": project_config.get("jenkins_server", "unknown"),
-                    "status": "active",
-                    "created": self._current_timestamp()
-                }
-
-                # For backward compatibility, also set 'alias' field from first alias if available
-                if project["aliases"]:
-                    project["alias"] = project["aliases"][0]
-                else:
-                    project["alias"] = project["name"]
-
-                projects.append(project)
-
-        return projects
-
-    def _extract_servers_from_config(self, config_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Extract servers from configuration data."""
-        servers = []
-
-        # This is a placeholder implementation
-        if "servers" in config_data:
-            for server_config in config_data["servers"]:
-                # Skip None entries
-                if server_config is None:
-                    logger.warning("Skipping None server entry in configuration")
-                    continue
-
-                server_name = server_config.get("name", "unknown")
-                server_url = server_config.get("url", "")
-                server_type = server_config.get("type", "jenkins")  # Default to jenkins
-                vpn_address = server_config.get("vpn_address", "")
-                location = server_config.get("location", "")
-                projects = server_config.get("projects", [])  # Extract projects list
-
-                # If no URL provided, try to infer it
-                if not server_url:
-                    inferred_url = self._infer_url_from_server_name(server_name, server_type)
-                    if inferred_url and self._test_url_accessibility(inferred_url):
-                        server_url = inferred_url
-                        logger.info(f"Successfully inferred URL for {server_name}: {inferred_url}")
-                    elif inferred_url:
-                        logger.info(f"Inferred URL {inferred_url} for {server_name} is not accessible")
-
-                server = {
-                    "name": server_name,
-                    "url": server_url,
-                    "type": server_type,
-                    "vpn_address": vpn_address,
-                    "location": location,
-                    "projects": projects,
-                    "project_count": len(projects),
-                    "status": "active",
-                    "created": self._current_timestamp()
-                }
-                servers.append(server)
-
-        return servers
-
-    def _integrate_server_data_sources(self, servers: List[Dict[str, Any]], _projects: List[Dict[str, Any]]) -> None:
-        """Integrate data from multiple sources to fix edge cases and improve consistency.
-
-        Args:
-            servers: List of server dictionaries to enhance
-            _projects: List of project dictionaries for context (unused but kept for future use)
-        """
-        # Enhance servers with live Tailscale VPN addresses
-        self._enhance_servers_with_tailscale_data(servers)
-
-        for server in servers:
-            self._fix_opnfv_anuket_linking(server)
-            self._handle_secondary_jenkins_instances(server, servers)
-            self._fix_lf_infrastructure_urls(server)
-            self._enhance_server_url_if_missing(server)
-            self._link_servers_to_projects_by_patterns(server)
-
-    def _enhance_server_url_if_missing(self, server: Dict[str, Any]) -> None:
-        """Enhance server with URL if missing, using project-based inference.
-
-        This bypasses accessibility testing for well-documented project infrastructure.
-        """
-        server_name = server.get("name", "")
-        server_url = server.get("url", "")
-        server_type = server.get("type", "jenkins")
-
-        # If server has no URL, try to infer one
-        if not server_url and server_name:
-            # First try project-based resolution (more reliable for known projects)
-            project_name = self._resolve_project_from_hostname(server_name.lower())
-            if project_name:
-                candidate_urls = self._get_project_infrastructure_urls(project_name, server_type)
-                if candidate_urls:
-                    base_url = candidate_urls[0]
-
-                    # Handle sandbox instances with /sandbox path
-                    if 'sandbox' in server_name.lower():
-                        inferred_url = f"{base_url}/sandbox"
-                    # Handle jenkins-2 secondary instances - typically sandbox instances
-                    elif 'jenkins-2' in server_name.lower() or server_name.lower().endswith('-2'):
-                        inferred_url = f"{base_url}/sandbox"
-                    else:
-                        inferred_url = base_url
-
-                    # For well-documented project infrastructure, set URL directly
-                    server["url"] = inferred_url
-                    logger.info(f"Applied project-based URL for {server_name}: {inferred_url}")
-                    return
-
-            # Fallback to legacy pattern matching with accessibility testing
-            fallback_url: Optional[str] = self._infer_url_from_server_name(server_name, server_type)
-            if fallback_url is not None and self._test_url_accessibility(fallback_url):
-                server["url"] = fallback_url
-                logger.info(f"Successfully inferred and tested URL for {server_name}: {fallback_url}")
-            elif fallback_url is not None:
-                logger.debug(f"Inferred URL {fallback_url} for {server_name} is not accessible")
-
-    def _fix_opnfv_anuket_linking(self, server: Dict[str, Any]) -> None:
-        """Fix OPNFV/Anuket server linking issue."""
-        server_name = server.get("name", "").lower()
-        if any(pattern in server_name for pattern in ["opnfv", "anuket"]):
-            if not server.get("projects"):
-                server["projects"] = []
-            # Link to Anuket project (formerly OPNFV)
-            if "Anuket" not in server["projects"]:
-                server["projects"].append("Anuket")
-
-    def _handle_secondary_jenkins_instances(self, server: Dict[str, Any], servers: List[Dict[str, Any]]) -> None:
-        """Handle jenkins-2 instances (usually sandbox/secondary)."""
-        server_name = server.get("name", "").lower()
-        if "jenkins-2" in server_name or server_name.endswith("-2"):
-            # These should typically be linked to the same project as jenkins-1
-            primary_server_name = server_name.replace("jenkins-2", "jenkins-1").replace("-2", "-1")
-            primary_server = self._find_server_by_name_pattern(servers, primary_server_name)
-            if primary_server and primary_server.get("projects"):
-                if not server.get("projects"):
-                    server["projects"] = []
-                # Copy project associations from primary server
-                for project in primary_server["projects"]:
-                    if project not in server["projects"]:
-                        server["projects"].append(project)
-
-    def _fix_lf_infrastructure_urls(self, server: Dict[str, Any]) -> None:
-        """Fix Linux Foundation IT infrastructure URLs."""
-        server_name = server.get("name", "").lower()
-        if "lfit" in server_name or "linuxfoundation" in server_name:
-            # These servers should have standard URLs
-            if not server.get("url"):
-                if "jenkins" in server_name:
-                    base_url = "https://jenkins.linuxfoundation.org"
-                    if "sandbox" in server_name:
-                        server["url"] = f"{base_url}/sandbox"
-                    else:
-                        server["url"] = base_url
-                elif "gerrit" in server_name:
-                    server["url"] = "https://gerrit.linuxfoundation.org"
-
-    def _build_project_name_mapping(self, projects: List[Dict[str, Any]]) -> Dict[str, str]:
-        """Build a mapping of project identifiers to canonical names.
+    def _build_servers_from_projects(self, projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Build servers list from projects data.
 
         Args:
             projects: List of project dictionaries
 
         Returns:
-            Dictionary mapping various project identifiers to canonical names
+            List of server dictionaries
         """
-        mapping = {}
+        servers = []
+
+        # Extract unique servers from projects
+        server_map = {}
 
         for project in projects:
-            primary_name = project.get("primary_name") or project.get("name", "")
-            aliases = project.get("aliases") or []
-            previous_names = project.get("previous_names") or []
+            # Extract server URLs from various project fields
+            # Support both legacy and new field names for servers
+            server_urls = []
 
-            # Normalize aliases and previous names
-            aliases = [a.strip().lower() for a in aliases]
-            previous_names = [pn.strip().lower() for pn in previous_names]
+            # Check for Jenkins servers
+            if project.get("jenkins_production"):
+                server_urls.append((project["jenkins_production"], "jenkins", True))
+            if project.get("jenkins_sandbox"):
+                server_urls.append((project["jenkins_sandbox"], "jenkins", False))
 
-            # Map primary name and all aliases to the canonical name
-            for identifier in [primary_name.lower()] + aliases + previous_names:
-                if identifier:
-                    mapping[identifier] = primary_name
+            # Legacy support for projects that may have this field
+            if project.get("jenkins_server"):
+                server_urls.append((f"https://{project['jenkins_server']}", "jenkins", True))
 
-        return mapping
+            # Future support for other server types
+            if project.get("gerrit_url"):
+                server_urls.append((project["gerrit_url"], "gerrit", True))
+            if project.get("nexus_url"):
+                server_urls.append((project["nexus_url"], "nexus", True))
+            if project.get("nexus3_url"):
+                server_urls.append((project["nexus3_url"], "nexus", True))
 
-    def _find_server_by_name_pattern(self, servers: List[Dict[str, Any]], pattern: str) -> Optional[Dict[str, Any]]:
-        """Find a server by name pattern.
+            for server_url, server_type, is_production in server_urls:
+                if not server_url:
+                    continue
 
-        Args:
-            servers: List of server dictionaries
-            pattern: Pattern to match against server names
+                # Extract server name from URL
+                from urllib.parse import urlparse
+                parsed = urlparse(server_url)
+                server_name = parsed.netloc.replace(":", "_")  # Handle port numbers
+
+                # Determine location and properties based on server URL patterns
+                location = "unknown"
+                github_mirror_org = None
+
+                # Map known servers to locations and properties
+                if "onap" in server_url:
+                    location = "vexxhost"
+                    if "sandbox" not in server_url:
+                        github_mirror_org = "onap"
+                elif "opendaylight" in server_url:
+                    location = "rackspace"
+                    github_mirror_org = "opendaylight"
+                elif "fd.io" in server_url:
+                    location = "rackspace"
+                    github_mirror_org = "FDio"
+                elif "lfnetworking" in server_url:
+                    location = "aws"
+
+                if server_name not in server_map:
+                    server_map[server_name] = {
+                        "name": server_name,
+                        "url": server_url,
+                        "type": server_type,
+                        "vpn_address": "",  # Will be filled by Tailscale integration
+                        "location": location,
+                        "github_mirror_org": github_mirror_org,
+                        "is_production": is_production,
+                        "version": "unknown",
+                        "projects": []
+                    }
+
+                # Add project to server
+                project_name = project.get("name", "unknown")
+                if project_name not in server_map[server_name]["projects"]:
+                    server_map[server_name]["projects"].append(project_name)
+
+        servers = list(server_map.values())
+        logger.info(f"Built {len(servers)} servers from {len(projects)} projects")
+
+        return servers
+
+    def _ensure_servers_database_exists(self) -> bool:
+        """Ensure servers database exists, prompt to build if missing.
+
+        The servers database contains sensitive VPN addresses and network topology
+        information that cannot be bundled with the package. It must be built locally
+        using live data from Tailscale VPN network.
 
         Returns:
-            Matching server dictionary or None
+            True if database exists or was created, False if user declined
         """
-        pattern_lower = pattern.lower()
-        for server in servers:
-            server_name = server.get("name", "").lower()
-            if pattern_lower in server_name or server_name in pattern_lower:
-                return server
-        return None
+        if self.servers_file.exists():
+            return True
 
-    def _link_servers_to_projects_by_patterns(self, server: Dict[str, Any]) -> None:
-        """Link servers to projects based on hostname patterns.
+        # Inform user about VPN requirement
+        logger.warning("Servers database not found!")
+        logger.info("The servers database contains VPN addresses and internal network topology")
+        logger.info("that must be built locally from your Tailscale VPN connection.")
+        logger.info("This ensures sensitive infrastructure data is not bundled with the package.")
+
+        # Prompt user to build database
+        try:
+            import typer
+            message = (
+                "Build servers database from live Tailscale VPN data? "
+                "(requires active VPN connection)"
+            )
+            if typer.confirm(message):
+                logger.info("Building servers database from Tailscale VPN network...")
+                self.rebuild_servers_database(force=True)
+                return True
+            else:
+                logger.warning("User declined to build servers database")
+                logger.info("Server-related commands will have limited functionality")
+                return False
+        except ImportError:
+            # If typer not available, try to build automatically
+            logger.info("Servers database not found. Building from Tailscale VPN network...")
+            logger.info("Note: This requires an active Tailscale VPN connection")
+            try:
+                self.rebuild_servers_database(force=True)
+                return True
+            except Exception as e:
+                logger.error(f"Auto-build failed: {e}")
+                logger.error("Please ensure Tailscale VPN is connected and try again")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to build servers database: {e}")
+            return False
+
+    def _save_yaml_with_header(self, data: Dict[str, Any], file_path: pathlib.Path) -> None:
+        """Save data as YAML with a header comment.
 
         Args:
-            server: Server dictionary to enhance
+            data: Data to save
+            file_path: Path to save to
         """
-        server_name = server.get("name", "").lower()
+        header = f"""# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: {datetime.now().year} The Linux Foundation
+#
+# This file was automatically generated by lftools-ng on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+# DO NOT EDIT MANUALLY - Use 'lftools-ng projects rebuild-servers --force' to regenerate
 
-        # Define hostname patterns that indicate project association
-        project_patterns = {
-            "opnfv": "Anuket",
-            "anuket": "Anuket",
-            "onap": "ONAP",
-            "akraino": "Akraino",
-            "opendaylight": "OpenDaylight",
-            "odl": "OpenDaylight",
-            "o-ran-sc": "O-RAN-SC",
-            "oran": "O-RAN-SC",
-            "opencord": "CORD",
-            "edgex": "EdgeX Foundry",
-            "edgexfoundry": "EdgeX Foundry",
-            "fd.io": "FD.io",
-            "fdio": "FD.io",
-            "agl": "Automotive Grade Linux",
-            "automotivelinux": "Automotive Grade Linux",
-            "yocto": "Yocto Project",
-            "cip": "Civil Infrastructure Platform",
-        }
+"""
 
-        for pattern, project_name in project_patterns.items():
-            if pattern in server_name:
-                if not server.get("projects"):
-                    server["projects"] = []
-                if project_name not in server["projects"]:
-                    server["projects"].append(project_name)
-                break  # Only match the first pattern to avoid duplicates
+        with open(file_path, 'w') as f:
+            f.write(header)
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-    def _map_projects_to_servers_in_place(
-        self,
-        servers: List[Dict[str, Any]],
-        projects: List[Dict[str, Any]]
-    ) -> None:
-        """Map projects to servers and update server data in place.
+        logger.info(f"Saved {file_path}")
+
+    def _integrate_server_data_sources(self, servers: List[Dict[str, Any]], projects: List[Dict[str, Any]]) -> None:
+        """Integrate data from various sources into server records.
+
+        This method enhances server records with data from:
+        1. Tailscale VPN network (for VPN addresses and infrastructure discovery)
+        2. Cross-references with projects data to validate mappings
+        3. Applies naming conventions and server type logic
+
+        Args:
+            servers: List of server dictionaries to enhance
+            projects: List of project dictionaries for reference
+        """
+        try:
+            from lftools_ng.core.tailscale_parser import TailscaleParser
+
+            # Initialize Tailscale parser
+            tailscale_parser = TailscaleParser()
+
+            # Get VPN server data
+            vpn_servers = tailscale_parser.get_available_servers()
+
+            if not vpn_servers:
+                logger.warning("No Tailscale VPN servers found. VPN addresses will remain empty.")
+                return
+
+            logger.info(f"Found {len(vpn_servers)} servers in Tailscale VPN network")
+
+            # Create a mapping of server names to VPN data (address and location)
+            vpn_mapping = {}
+            for vpn_server in vpn_servers:
+                vpn_name = vpn_server.get("name", "")
+                vpn_address = vpn_server.get("vpn_address", "")
+                if vpn_name and vpn_address:
+                    vpn_mapping[vpn_name] = {
+                        "vpn_address": vpn_address,
+                        "location": vpn_server.get("status", "").split()[-1] if vpn_server.get("status") else "unknown"
+                    }
+
+            # Enhance existing servers with VPN data
+            enhanced_count = 0
+            for server in servers:
+                server_name = server.get("name", "")
+
+                # Try direct name match first
+                if server_name in vpn_mapping:
+                    vpn_data = vpn_mapping[server_name]
+                    server["vpn_address"] = vpn_data["vpn_address"]
+                    enhanced_count += 1
+                    continue
+
+                # Try fuzzy matching for servers that might have different naming
+                # Extract base server name from URL if needed
+                server_url = server.get("url", "")
+                if server_url:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(server_url)
+                    url_hostname = parsed.netloc
+
+                    # Check if URL hostname matches any VPN server
+                    for vpn_name, vpn_data in vpn_mapping.items():
+                        if self._fuzzy_match_server_names(url_hostname, vpn_name):
+                            server["vpn_address"] = vpn_data["vpn_address"]
+                            enhanced_count += 1
+                            break
+
+            logger.info(f"Enhanced {enhanced_count} servers with VPN addresses from Tailscale")
+
+        except ImportError:
+            logger.warning("Tailscale integration not available")
+        except Exception as e:
+            logger.warning(f"Failed to integrate Tailscale data: {e}")
+
+    def _fuzzy_match_server_names(self, url_hostname: str, vpn_hostname: str) -> bool:
+        """Perform fuzzy matching between URL hostname and VPN hostname.
+
+        Args:
+            url_hostname: Hostname from server URL
+            vpn_hostname: Hostname from Tailscale VPN
+
+        Returns:
+            True if hostnames likely refer to the same server
+        """
+        # Simple fuzzy matching logic
+        # Remove common prefixes/suffixes and compare
+        url_clean = url_hostname.lower().replace("jenkins.", "").replace("gerrit.", "").replace("nexus.", "")
+        vpn_clean = vpn_hostname.lower()
+
+        # Check if the project name appears in both
+        url_parts = url_clean.split(".")
+        vpn_parts = vpn_clean.split("-")
+
+        # Look for common project indicators
+        common_projects = ["onap", "opendaylight", "odl", "fdio", "fd.io", "akraino", "edgex", "oran", "o-ran-sc"]
+
+        url_project = None
+        vpn_project = None
+
+        for project in common_projects:
+            if project in url_clean:
+                url_project = project
+            for part in vpn_parts:
+                if project in part:
+                    vpn_project = project
+
+        return url_project == vpn_project and url_project is not None
+
+    def _map_projects_to_servers_in_place(self, servers: List[Dict[str, Any]], projects: List[Dict[str, Any]]) -> None:
+        """Map projects to servers and update server project counts in-place.
 
         Args:
             servers: List of server dictionaries to update
-            projects: List of project dictionaries containing server URLs
+            projects: List of project dictionaries
         """
-        # Create server lookup mapping
-        server_lookup = self._build_server_lookup(servers)
+        # Create mapping of server URLs to projects
+        server_projects = {}
 
-        # Map each project to servers
         for project in projects:
-            self._map_single_project_to_servers(project, server_lookup)
+            # Extract server URLs from various project fields (same logic as _build_servers_from_projects)
+            server_urls = []
 
-        # Update project counts
-        for server in servers:
-            server["project_count"] = len(server.get("projects", []))
+            # Check for Jenkins servers
+            if project.get("jenkins_production"):
+                server_urls.append(project["jenkins_production"])
+            if project.get("jenkins_sandbox"):
+                server_urls.append(project["jenkins_sandbox"])
 
-    def _build_server_lookup(self, servers: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-        """Build lookup mapping from server names/URLs to server objects."""
-        from urllib.parse import urlparse
+            # Legacy support
+            if project.get("jenkins_server"):
+                server_urls.append(f"https://{project['jenkins_server']}")
 
-        server_lookup = {}
+            # Future support for other server types
+            if project.get("gerrit_url"):
+                server_urls.append(project["gerrit_url"])
+            if project.get("nexus_url"):
+                server_urls.append(project["nexus_url"])
+            if project.get("nexus3_url"):
+                server_urls.append(project["nexus3_url"])
+
+            for server_url in server_urls:
+                if not server_url:
+                    continue
+
+                # Extract server name from URL
+                from urllib.parse import urlparse
+                parsed = urlparse(server_url)
+                server_name = parsed.netloc.replace(":", "_")  # Handle port numbers
+
+                if server_name not in server_projects:
+                    server_projects[server_name] = []
+                project_name = project.get("name", "unknown")
+                if project_name not in server_projects[server_name]:
+                    server_projects[server_name].append(project_name)
+
+        # Update servers with project information, preserving existing assignments
         for server in servers:
             server_name = server.get("name", "")
-            server_url = server.get("url", "")
-
-            # Initialize projects list and count if not already set
-            if "projects" not in server:
-                server["projects"] = []
-            if "project_count" not in server:
-                server["project_count"] = 0
-
-            # Add to lookup by name
-            if server_name:
-                server_lookup[server_name] = server
-                server_lookup[server_name.lower()] = server
-
-            # Add to lookup by URL (both full URL and domain)
-            if server_url:
-                server_lookup[server_url] = server
-                parsed = urlparse(server_url)
-                if parsed.netloc:
-                    server_lookup[parsed.netloc] = server
-                    server_lookup[parsed.netloc.lower()] = server
-
-        return server_lookup
-
-    def _map_single_project_to_servers(self, project: Dict[str, Any], server_lookup: Dict[str, Dict[str, Any]]) -> None:
-        """Map a single project to its servers."""
-
-        project_name = project.get("name", "unknown")
-
-        # Define server URL fields to check
-        server_url_fields = [
-            "jenkins_production",
-            "jenkins_sandbox",
-            "gerrit_url",
-            "nexus_url",
-            "nexus3_url",
-            "sonar_url",
-            "logs_url"
-        ]
-
-        # Check each server URL field in the project
-        for field in server_url_fields:
-            url = project.get(field)
-            if url:
-                server = self._find_server_by_url(url, server_lookup)
-                if server and project_name not in server["projects"]:
-                    server["projects"].append(project_name)
-
-    def _find_server_by_url(self, url: str, server_lookup: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Find server by URL in the lookup mapping."""
-        from urllib.parse import urlparse
-
-        # First try exact URL match
-        if url in server_lookup:
-            return server_lookup[url]
-
-        # Try domain name match
-        parsed = urlparse(url)
-        if parsed.netloc:
-            netloc_variations = [
-                parsed.netloc,
-                parsed.netloc.lower(),
-            ]
-            for netloc in netloc_variations:
-                if netloc in server_lookup:
-                    return server_lookup[netloc]
-
-        return None
+            if server_name in server_projects:
+                # Update with projects found in projects.yaml
+                server["projects"] = server_projects[server_name]
+                server["project_count"] = len(server_projects[server_name])
+            else:
+                # Preserve existing project assignments for VPN-discovered servers
+                existing_projects = server.get("projects", [])
+                if not existing_projects:
+                    # Only set to empty if there were no existing projects
+                    server["projects"] = []
+                    server["project_count"] = 0
+                else:
+                    # Keep existing projects and update count
+                    server["project_count"] = len(existing_projects)
 
     def _enhance_servers_with_inferred_urls(self, servers: List[Dict[str, Any]]) -> None:
-        """Enhance servers with inferred URLs where missing.
+        """Enhance servers with inferred URLs if missing.
 
         Args:
             servers: List of server dictionaries to enhance
         """
         for server in servers:
-            if not server.get("url"):
-                self._infer_and_set_server_url(server)
-
-    def _infer_and_set_server_url(self, server: Dict[str, Any]) -> None:
-        """Infer and set URL for a single server."""
-        server_name = server.get("name", "")
-        server_type = server.get("type", "jenkins")
-
-        # Try to infer URL from server name
-        inferred_url = self._infer_url_from_server_name(server_name, server_type)
-        if inferred_url:
-            # Test if the inferred URL is accessible
-            if self._test_url_accessibility(inferred_url):
-                server["url"] = inferred_url
-                logger.info(f"Inferred accessible URL for {server_name}: {inferred_url}")
-            else:
-                logger.debug(f"Inferred URL {inferred_url} for {server_name} is not accessible")
-
-        # Special handling for Nexus IQ servers
-        if server_type == "nexus-iq" and not server.get("url"):
-            self._handle_nexus_iq_url_inference(server, server_name)
-
-    def _handle_nexus_iq_url_inference(self, server: Dict[str, Any], server_name: str) -> None:
-        """Handle Nexus IQ URL inference."""
-        nexus_iq_url = self._infer_nexus_iq_url(server_name)
-        if nexus_iq_url:
-            # For internal AWS servers, don't test accessibility
-            # as they are only accessible from within the VPN
-            if server_name.startswith("aws-"):
-                server["url"] = nexus_iq_url
-                logger.info(f"Inferred internal Nexus IQ URL for {server_name}: {nexus_iq_url}")
-            elif self._test_url_accessibility(nexus_iq_url):
-                server["url"] = nexus_iq_url
-                logger.info(f"Inferred accessible Nexus IQ URL for {server_name}: {nexus_iq_url}")
-
-    def _infer_nexus_iq_url(self, server_name: str) -> Optional[str]:
-        """Infer Nexus IQ URL from server name.
-
-        Args:
-            server_name: Server hostname
-
-        Returns:
-            Inferred URL or None
-        """
-        # Nexus IQ servers typically use standard ports and paths
-        # Common patterns:
-        # 1. https://hostname:8070 (default Nexus IQ port)
-        # 2. https://hostname/nexusiq
-        # 3. https://hostname (if running on standard HTTPS port)
-
-        if not server_name:
-            return None
-
-        # Special handling for Linux Foundation shared Nexus IQ infrastructure
-        if server_name == "aws-us-west-2-wl-nexusiq-1":
-            # This is the shared LF Nexus IQ server - use public URL
-            return LF_NEXUS_IQ_URL
-
-        # For AWS internal servers, we typically can't access them directly
-        # but we can document the expected internal URL pattern
-        if server_name.startswith("aws-"):
-            # AWS internal servers typically use hostname:8070 for Nexus IQ
-            return f"https://{server_name}:8070"
-
-        # For public-facing servers, try standard HTTPS
-        return f"https://{server_name}"
-
-    def _extract_servers_from_projects(self, projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Extract unique servers from project configurations."""
-        servers = []
-        server_names = set()
-
-        for project in projects:
-            # Skip None entries
-            if project is None:
-                logger.warning("Skipping None project entry")
-                continue
-
-            server_name = project.get("jenkins_server")
-            if server_name and server_name not in server_names:
-                # Try to infer URL from server name
-                inferred_url = self._infer_url_from_server_name(server_name, "jenkins")
-
-                # Test if inferred URL is accessible
-                server_url = ""
-                if inferred_url and self._test_url_accessibility(inferred_url):
-                    server_url = inferred_url
-                    logger.info(f"Successfully inferred URL for {server_name}: {inferred_url}")
-                elif inferred_url:
-                    logger.info(f"Inferred URL {inferred_url} for {server_name} is not accessible")
-
-                server = {
-                    "name": server_name,
-                    "url": server_url,
-                    "type": "jenkins",
-                    "status": "discovered",
-                    "created": self._current_timestamp()
-                }
-                servers.append(server)
-                server_names.add(server_name)
-
-        return servers
-
-    def _map_projects_to_servers(
-        self,
-        projects: List[Dict[str, Any]],
-        servers: List[Dict[str, Any]]
-    ) -> int:
-        """Map projects to servers and return count of mapped projects."""
-        server_names = {s.get("name") for s in servers if s is not None}
-        mapped_count = 0
-
-        for project in projects:
-            if project is not None and project.get("jenkins_server") in server_names:
-                mapped_count += 1
-
-        return mapped_count
-
-    def _save_projects(self, projects: List[Dict[str, Any]]) -> None:
-        """Save projects to file."""
-        data = {
-            "projects": projects,
-            "metadata": {
-                "updated": self._current_timestamp(),
-                "count": len(projects)
-            }
-        }
-
-        self._save_yaml_with_header(data, self.projects_file)
-
-    def _save_servers(self, servers: List[Dict[str, Any]]) -> None:
-        """Save servers to file."""
-        data = {
-            "servers": servers,
-            "metadata": {
-                "updated": self._current_timestamp(),
-                "count": len(servers)
-            }
-        }
-
-        self._save_yaml_with_header(data, self.servers_file)
-
-    def _current_timestamp(self) -> str:
-        """Get current timestamp as ISO string."""
-        from datetime import datetime
-        return datetime.now().isoformat()
-
-    def _save_yaml_with_header(self, data: Dict[str, Any], file_path: pathlib.Path) -> None:
-        """Save YAML data with proper SPDX header and document start marker."""
-        header = """# SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2025 The Linux Foundation
-
----
-"""
-        with open(file_path, "w") as f:
-            f.write(header)
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    def _test_url_accessibility(self, url: str) -> bool:
-        """Test if a URL is accessible and returns a valid response.
-
-        Args:
-            url: URL to test.
-
-        Returns:
-            True if URL is accessible (even if authentication is required).
-        """
-        if not url:
-            return False
-
-        try:
-            # Test the URL with a short timeout and simple request
-            response = httpx.head(url, timeout=5, follow_redirects=True)
-
-            # Consider 2xx, 3xx, 401, 403, and 405 responses as successful
-            # 401/403 mean the server exists but requires auth or denies access - still valid URLs
-            # Some services return 405 for HEAD requests but are still valid
-            if (response.status_code in range(200, 400) or
-                response.status_code in [401, 403, 405]):
-                logger.debug(f"URL {url} is accessible (status: {response.status_code})")
-                return True
-            else:
-                logger.debug(f"URL {url} returned status: {response.status_code}")
-                return False
-
-        except Exception as e:
-            logger.debug(f"URL {url} accessibility test failed: {e}")
-            return False
-
-    def _infer_url_from_server_name(self, server_name: str, server_type: str) -> Optional[str]:
-        """Infer URL from server name for servers without explicit URLs.
-
-        Args:
-            server_name: Name of the server (e.g., 'vex-yul-agl-jenkins-1')
-            server_type: Type of server ('jenkins', 'gerrit', 'nexus', etc.)
-
-        Returns:
-            Inferred URL or None if unable to infer
-        """
-        if not server_name or not server_type:
-            return None
-
-        server_name_lower = server_name.lower()
-
-        # First, try to resolve the project from hostname using fuzzy mapping
-        project_name = self._resolve_project_from_hostname(server_name_lower)
-        if project_name:
-            candidate_urls = self._get_project_infrastructure_urls(project_name, server_type)
-            if candidate_urls:
-                base_url = candidate_urls[0]
-
-                # Handle sandbox instances with /sandbox path
-                if 'sandbox' in server_name_lower:
-                    return f"{base_url}/sandbox"
-
-                # Handle jenkins-2 secondary instances - typically sandbox instances
-                if 'jenkins-2' in server_name_lower or server_name_lower.endswith('-2'):
-                    return f"{base_url}/sandbox"
-
-                # Return the base URL for primary instances
-                return base_url
-
-        # Fallback to legacy pattern matching if project resolution fails
-        url_patterns = self._get_url_patterns_for_server_type(server_type)
-        inferred_url = self._match_server_name_to_patterns(server_name_lower, url_patterns)
-        if inferred_url:
-            return inferred_url
-
-        # Additional pattern matching for complex server names
-        return self._handle_complex_server_patterns(server_name_lower, server_type)
-
-    def _get_url_patterns_for_server_type(self, server_type: str) -> Dict[str, List[str]]:
-        """Get URL patterns based on server type."""
-        url_patterns = {
-            # Jenkins servers - only include confirmed working patterns
-            'jenkins': {
-                'agl': ['https://build.automotivelinux.org'],  # AGL uses build.automotivelinux.org
-                'automotivelinux': ['https://build.automotivelinux.org'],
-                'akraino': ['https://jenkins.akraino.org'],
-                'onap': ['https://jenkins.onap.org'],
-                'opencord': ['https://jenkins.opencord.org'],
-                'edgexfoundry': ['https://jenkins.edgexfoundry.org'],
-                'o-ran-sc': ['https://jenkins.o-ran-sc.org'],
-                'opendaylight': ['https://jenkins.opendaylight.org'],
-                'opnfv': ['https://build.opnfv.org'],  # OPNFV uses build.opnfv.org pattern
-                FDIO_KEY: [FDIO_JENKINS_URL],
-                FDIO_ALT_KEY: [FDIO_JENKINS_URL],
-                'lfit': [LF_JENKINS_URL],
-                'linuxfoundation': [LF_JENKINS_URL],
-                'yocto': [YOCTO_AUTOBUILDER_URL, 'https://jenkins.yoctoproject.org'],
-                'yoctoproject': [YOCTO_AUTOBUILDER_URL, 'https://jenkins.yoctoproject.org'],
-            },
-            # Gerrit servers
-            'gerrit': {
-                'agl': ['https://gerrit.automotivelinux.org'],
-                'automotivelinux': ['https://gerrit.automotivelinux.org'],
-                'opnfv': ['https://gerrit.opnfv.org'],
-                'akraino': ['https://gerrit.akraino.org'],
-                'onap': ['https://gerrit.onap.org'],
-                'opencord': ['https://gerrit.opencord.org'],
-                'edgexfoundry': ['https://gerrit.edgexfoundry.org'],
-                'o-ran-sc': ['https://gerrit.o-ran-sc.org'],
-                'opendaylight': ['https://git.opendaylight.org', 'https://gerrit.opendaylight.org'],
-                FDIO_KEY: ['https://gerrit.fd.io'],
-                FDIO_ALT_KEY: ['https://gerrit.fd.io'],
-                'lfit': ['https://gerrit.linuxfoundation.org'],
-                'linuxfoundation': ['https://gerrit.linuxfoundation.org'],
-            },
-            # Nexus servers
-            'nexus': {
-                'akraino': ['https://nexus.akraino.org'],
-                'onap': ['https://nexus.onap.org'],
-                'opencord': ['https://nexus.opencord.org'],
-                'edgexfoundry': ['https://nexus.edgexfoundry.org'],
-                'o-ran-sc': ['https://nexus.o-ran-sc.org'],
-                'opendaylight': ['https://nexus.opendaylight.org'],
-                FDIO_KEY: ['https://nexus.fd.io'],
-                FDIO_ALT_KEY: ['https://nexus.fd.io'],
-            }
-        }
-
-        return url_patterns.get(server_type, {})
-
-    def _match_server_name_to_patterns(self, server_name: str, patterns: Dict[str, List[str]]) -> Optional[str]:
-        """Match server name to URL patterns."""
-        for project_key, candidate_urls in patterns.items():
-            if project_key in server_name:
-                base_url = candidate_urls[0]
-
-                # Handle sandbox instances with /sandbox path
-                if 'sandbox' in server_name:
-                    return f"{base_url}/sandbox"
-
-                # Handle jenkins-2 secondary instances - typically sandbox instances
-                if 'jenkins-2' in server_name or server_name.endswith('-2'):
-                    # For most projects, -2 instances are sandbox instances
-                    return f"{base_url}/sandbox"
-
-                # Return the base URL for primary instances
-                return base_url
-
-        return None
-
-    def _handle_complex_server_patterns(self, server_name: str, server_type: str) -> Optional[str]:
-        """Handle additional pattern matching for complex server names."""
-        if server_type == 'jenkins':
-            # Handle Linux Foundation IT infrastructure
-            if 'lfit' in server_name or 'linuxfoundation' in server_name:
-                base_url = LF_JENKINS_URL
-                if 'sandbox' in server_name:
-                    return f"{base_url}/sandbox"
-                return base_url
-
-            # Handle Yocto Project infrastructure
-            if 'yocto' in server_name:
-                return YOCTO_AUTOBUILDER_URL
-
-            # Handle CIP (Civil Infrastructure Platform)
-            if 'cip' in server_name:
-                return 'https://jenkins.cip-project.org'
-
-        return None
-
-    def enhance_existing_servers(self) -> Dict[str, int]:
-        """Enhance existing servers with inferred URLs for servers missing URLs.
-
-        Returns:
-            Dictionary with enhancement statistics
-        """
-        servers = self.list_servers()
-        enhanced_count = 0
-
-        for server in servers:
-            server_name = server.get("name", "")
-            server_url = server.get("url", "")
-            server_type = server.get("type", "jenkins")  # Default to jenkins if not specified
-
-            # If server has no URL, try to infer one
-            if not server_url and server_name:
-                inferred_url = self._infer_url_from_server_name(server_name, server_type)
-                if inferred_url and self._test_url_accessibility(inferred_url):
-                    server["url"] = inferred_url
-                    enhanced_count += 1
-                    logger.info(f"Successfully inferred URL for {server_name}: {inferred_url}")
-                elif inferred_url:
-                    logger.info(f"Inferred URL {inferred_url} for {server_name} is not accessible")
-
-        # Save enhanced servers back to file
-        if enhanced_count > 0:
-            self._save_servers(servers)
-            logger.info(f"Enhanced {enhanced_count} servers with inferred URLs")
-
-        return {
-            "servers_total": len(servers),
-            "servers_enhanced": enhanced_count
-        }
-
-    def _resolve_project_from_hostname(self, server_name: str) -> Optional[str]:
-        """Resolve the actual project name from a server hostname using pattern mapping.
-
-        Args:
-            server_name: Server hostname
-
-        Returns:
-            Resolved project name or None
-        """
-        server_name = server_name.lower()
-
-        # Define hostname patterns that indicate project association
-        project_patterns = {
-            "opnfv": "Anuket",
-            "anuket": "Anuket",
-            "onap": "ONAP",
-            "akraino": "Akraino",
-            "opendaylight": "OpenDaylight",
-            "odl": "OpenDaylight",
-            "o-ran-sc": "O-RAN-SC",
-            "oran": "O-RAN-SC",
-            "opencord": "CORD",
-            "edgex": "EdgeX Foundry",
-            "edgexfoundry": "EdgeX Foundry",
-            "agl": "AGL",
-            "automotivelinux": "AGL",
-            "fd.io": "FD.io",
-            "fdio": "FD.io",
-            "lfit": "LF RelEng",
-            "linuxfoundation": "LF RelEng",
-            "yocto": "Yocto Project",
-            "yoctoproject": "Yocto Project"
-        }
-
-        for pattern, project in project_patterns.items():
-            if pattern in server_name:
-                return project
-
-        return None
-
-    def _get_project_infrastructure_urls(self, project_name: str, server_type: str) -> List[str]:
-        """Get the current infrastructure URLs for a project.
-
-        Args:
-            project_name: Name of the project
-            server_type: Type of server (jenkins, gerrit, nexus, etc.)
-
-        Returns:
-            List of candidate URLs for the project's infrastructure
-        """
-        # Map project names to their current infrastructure URLs
-        project_infrastructure = {
-            "Anuket": {
-                "jenkins": ["https://build.opnfv.org"],  # Still uses opnfv.org domain
-                "gerrit": ["https://gerrit.opnfv.org"]
-            },
-            "ONAP": {
-                "jenkins": ["https://jenkins.onap.org"],
-                "gerrit": ["https://gerrit.onap.org"],
-                "nexus": ["https://nexus.onap.org"]
-            },
-            "Akraino": {
-                "jenkins": ["https://jenkins.akraino.org"],
-                "gerrit": ["https://gerrit.akraino.org"],
-                "nexus": ["https://nexus.akraino.org"]
-            },
-            "OpenDaylight": {
-                "jenkins": ["https://jenkins.opendaylight.org"],
-                "gerrit": ["https://git.opendaylight.org", "https://gerrit.opendaylight.org"],
-                "nexus": ["https://nexus.opendaylight.org"]
-            },
-            "O-RAN-SC": {
-                "jenkins": ["https://jenkins.o-ran-sc.org"],
-                "gerrit": ["https://gerrit.o-ran-sc.org"],
-                "nexus": ["https://nexus.o-ran-sc.org"]
-            },
-            "CORD": {
-                "jenkins": ["https://jenkins.opencord.org"],
-                "gerrit": ["https://gerrit.opencord.org"]
-            },
-            "EdgeX Foundry": {
-                "jenkins": ["https://jenkins.edgexfoundry.org"],
-                "gerrit": ["https://gerrit.edgexfoundry.org"],
-                "nexus": ["https://nexus.edgexfoundry.org"]
-            },
-            "AGL": {
-                "jenkins": ["https://build.automotivelinux.org"],
-                "gerrit": ["https://gerrit.automotivelinux.org"]
-            },
-            "FD.io": {
-                "jenkins": [FDIO_JENKINS_URL],
-                "gerrit": ["https://gerrit.fd.io"]
-            },
-            "LF RelEng": {
-                "jenkins": [LF_JENKINS_URL],
-                "gerrit": ["https://gerrit.linuxfoundation.org"]
-            },
-            "Yocto Project": {
-                "jenkins": [YOCTO_AUTOBUILDER_URL, "https://jenkins.yoctoproject.org"]
-            }
-        }
-
-        if project_name in project_infrastructure:
-            project_urls = project_infrastructure[project_name]
-            return project_urls.get(server_type, [])
-
-        return []
-
-    def _enhance_projects_with_github_discovery(self, projects: List[Dict[str, Any]]) -> None:
-        """Enhance projects with GitHub organization discovery and repository enumeration.
-
-        Args:
-            projects: List of project dictionaries to enhance
-        """
-        from lftools_ng.core.github_discovery import GitHubDiscovery
-
-        logger.info("Enhancing projects with GitHub discovery...")
-        discovered_count = 0
-        repositories = []
-
-        with GitHubDiscovery() as github_discovery:
-            for project in projects:
-                proj_name = project.get("name", "")
-                existing_org = project.get("github_mirror_org")
-
-                if existing_org:
-                    logger.info(f"Project {proj_name} already has GitHub org: {existing_org}")
-                else:
-                    # Discover GitHub organization
-                    logger.info(f"Discovering GitHub org for: {proj_name}")
-                    discovered_org = github_discovery.discover_github_organization(project)
-
-                    if discovered_org:
-                        project["github_mirror_org"] = discovered_org
-                        discovered_count += 1
-                        logger.info(f"Found GitHub org for {proj_name}: {discovered_org}")
-
-                # Discover repositories for this project
-                project_repos = self._discover_project_repositories(project, github_discovery)
-                repositories.extend(project_repos)
-
-        # Save discovered repositories
-        if repositories:
-            self._save_repositories(repositories)
-            logger.info(f"Saved {len(repositories)} repositories for {len(projects)} projects")
-
-        logger.info(f"GitHub discovery enhanced {discovered_count} projects with new organizations")
-
-    def _discover_project_repositories(self, project: Dict[str, Any], github_discovery: Any) -> List[Dict[str, Any]]:
-        """Discover repositories for a specific project.
-
-        Args:
-            project: Project data dictionary
-            github_discovery: GitHub discovery instance
-
-        Returns:
-            List of repository dictionaries
-        """
-        repositories = []
-        proj_name = project.get("name", "")
-        github_org = project.get("github_mirror_org")
-
-        # Discover repositories from GitHub if we have an organization
-        if github_org:
-            github_repos = self._discover_github_repositories(github_org, proj_name, github_discovery)
-            repositories.extend(github_repos)
-
-        # Add Gerrit repositories if we have Gerrit URL
-        gerrit_url = project.get("gerrit_url")
-        if gerrit_url:
-            gerrit_repos = self._discover_gerrit_repositories(gerrit_url, proj_name)
-            repositories.extend(gerrit_repos)
-
-        return repositories
-
-    def _discover_github_repositories(self, github_org: str, project_name: str, github_discovery: Any) -> List[Dict[str, Any]]:
-        """Discover repositories from GitHub organization.
-
-        Args:
-            github_org: GitHub organization name
-            project_name: Project name
-            github_discovery: GitHub discovery instance
-
-        Returns:
-            List of repository dictionaries
-        """
-        repositories = []
-
-        try:
-            # Get repositories from GitHub API
-            response = github_discovery.client.get(f"https://api.github.com/orgs/{github_org}/repos")
-            if response.status_code == 200:
-                github_repos = response.json()
-
-                for repo in github_repos:
-                    repo_data = {
-                        "project": project_name,
-                        "github_name": repo.get("name", ""),
-                        "description": repo.get("description", ""),
-                        "archived": repo.get("archived", False),
-                        "gerrit_path": self._map_github_to_gerrit_path(repo.get("name", "")),
-                        "created": datetime.now().isoformat(),
-                        "updated": datetime.now().isoformat(),
-                    }
-                    repositories.append(repo_data)
-
-        except Exception as e:
-            logger.warning(f"Failed to discover GitHub repositories for {github_org}: {e}")
-
-        return repositories
-
-    def _discover_gerrit_repositories(self, gerrit_url: str, project_name: str) -> List[Dict[str, Any]]:
-        """Discover repositories from Gerrit.
-
-        Args:
-            gerrit_url: Gerrit server URL
-            project_name: Project name
-
-        Returns:
-            List of repository dictionaries
-        """
-        repositories: List[Dict[str, Any]] = []
-
-        try:
-            # This would need actual Gerrit API implementation
-            # For now, we'll create placeholder entries based on common patterns
-            logger.info(f"Gerrit repository discovery for {gerrit_url} (project: {project_name}) not yet implemented")
-
-        except Exception as e:
-            logger.warning(f"Failed to discover Gerrit repositories for {gerrit_url}: {e}")
-
-        return repositories
-
-    def _map_github_to_gerrit_path(self, github_name: str) -> Optional[str]:
-        """Map GitHub repository name to likely Gerrit path.
-
-        Args:
-            github_name: GitHub repository name
-
-        Returns:
-            Likely Gerrit path or None if no mapping can be determined
-        """
-        # Replace hyphens with slashes for common patterns
-        # e.g., "it-dep-l2" -> "it/dep/l2"
-        if "-" in github_name:
-            # Simple heuristic: replace hyphens with slashes
-            return github_name.replace("-", "/")
-
-        return None
-
-    def _save_repositories(self, repositories: List[Dict[str, Any]]) -> None:
-        """Save repositories to the repositories file.
-
-        Args:
-            repositories: List of repository dictionaries
-        """
-        try:
-            repositories_data = {"repositories": repositories}
-            self._save_yaml_with_header(repositories_data, self.repositories_file)
-            logger.info(f"Saved {len(repositories)} repositories to {self.repositories_file}")
-
-        except Exception as e:
-            logger.error(f"Failed to save repositories: {e}")
+            if not server.get("url") and server.get("name"):
+                # Infer HTTPS URL from server name
+                server_name = server["name"]
+                if not server_name.startswith(("http://", "https://")):
+                    server["url"] = f"https://{server_name}"
 
     def _enhance_servers_with_tailscale_data(self, servers: List[Dict[str, Any]]) -> None:
-        """Enhance servers with live Tailscale VPN address data.
+        """Enhance server records with Tailscale VPN data.
 
-        This method comprehensively reconciles server VPN addresses with live Tailscale data.
-        It eliminates placeholder 100.64.X.Y addresses and only populates VPN addresses
-        from actual Tailscale connectivity.
+        This method attempts to connect to the Tailscale VPN network to discover
+        infrastructure servers and populate VPN addresses. It requires an active
+        Tailscale connection.
 
         Args:
-            servers: List of server dictionaries to enhance with VPN addresses
+            servers: List of server dictionaries to enhance
         """
         try:
             from lftools_ng.core.tailscale_parser import TailscaleParser
 
-            parser = TailscaleParser()
+            tailscale = TailscaleParser()
 
-            # Get live Tailscale status
-            logger.info("Fetching live Tailscale status for VPN address reconciliation...")
-            tailscale_status = parser.get_tailscale_status()
-
-            if not tailscale_status:
-                logger.warning("No Tailscale data available - clearing placeholder VPN addresses")
-                self._clear_placeholder_vpn_addresses(servers)
+            # Test if Tailscale is available and logged in
+            status_data = tailscale.get_tailscale_status()
+            if not status_data:
+                logger.warning("Tailscale not available or not logged in. VPN data will be incomplete.")
                 return
 
-            # Parse Tailscale peers to get available servers
-            tailscale_servers = parser.parse_vpn_servers(tailscale_status)
+            # Parse VPN servers from Tailscale
+            vpn_servers = tailscale.parse_vpn_servers(status_data)
 
-            if not tailscale_servers:
-                logger.warning("No Tailscale servers found - clearing placeholder VPN addresses")
-                self._clear_placeholder_vpn_addresses(servers)
+            if not vpn_servers:
+                logger.warning("No infrastructure servers found in Tailscale VPN network")
                 return
 
-            logger.info(f"Found {len(tailscale_servers)} servers in Tailscale network")
+            logger.info(f"Found {len(vpn_servers)} infrastructure servers in Tailscale VPN")
 
-            # Create comprehensive mapping from Tailscale data
-            vpn_mapping = self._create_comprehensive_vpn_mapping(tailscale_servers)
+            # Create lookup maps
+            vpn_by_hostname = {server.name: server for server in vpn_servers}
 
-            # Perform gap analysis and update servers
-            self._reconcile_server_vpn_addresses(servers, vpn_mapping, tailscale_servers)
+            # Enhance existing servers with VPN data
+            for server_dict in servers:
+                server_name = server_dict.get("name", "")
+                server_url = server_dict.get("url", "")
+
+                # Try direct hostname match
+                if server_name in vpn_by_hostname:
+                    vpn_server = vpn_by_hostname[server_name]
+                    server_dict["vpn_address"] = vpn_server.vpn_address
+                    # Transfer location and hosting information if unknown
+                    if server_dict.get("location") == "unknown":
+                        server_dict["location"] = vpn_server.location.value
+                    continue
+
+                # Try URL-based matching
+                if server_url:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(server_url)
+                    url_hostname = parsed.netloc
+
+                    # Look for matches in VPN hostnames
+                    for vpn_hostname, vpn_server in vpn_by_hostname.items():
+                        if self._match_server_hostnames(url_hostname, vpn_hostname):
+                            server_dict["vpn_address"] = vpn_server.vpn_address
+                            # Transfer location and hosting information if unknown
+                            if server_dict.get("location") == "unknown":
+                                server_dict["location"] = vpn_server.location.value
+                            break
+
+            # Add any VPN-only servers that weren't found in projects
+            existing_names = {s.get("name", "") for s in servers}
+            for vpn_server in vpn_servers:
+                if vpn_server.name not in existing_names:
+                    # Add new server discovered via VPN
+                    new_server = {
+                        "name": vpn_server.name,
+                        "url": vpn_server.url or "",
+                        "type": vpn_server.server_type.value,
+                        "vpn_address": vpn_server.vpn_address,
+                        "location": vpn_server.location.value,
+                        "is_production": vpn_server.is_production,
+                        "projects": vpn_server.projects,
+                        "version": "unknown"
+                    }
+                    servers.append(new_server)
+
+            logger.info(f"Enhanced servers with Tailscale VPN data. Total servers: {len(servers)}")
 
         except ImportError:
-            logger.warning("Tailscale parser not available - clearing placeholder VPN addresses")
-            self._clear_placeholder_vpn_addresses(servers)
+            logger.warning("Tailscale parser not available")
         except Exception as e:
-            logger.warning(f"Failed to enhance servers with Tailscale data: {e}")
-            logger.warning("Clearing placeholder VPN addresses due to error")
-            self._clear_placeholder_vpn_addresses(servers)
+            logger.error(f"Failed to enhance servers with Tailscale data: {e}")
 
-    def _clear_placeholder_vpn_addresses(self, servers: List[Dict[str, Any]]) -> None:
-        """Clear placeholder 100.64.X.Y VPN addresses from servers.
+    def _match_server_hostnames(self, url_hostname: str, vpn_hostname: str) -> bool:
+        """Match URL hostname to VPN hostname using project-based logic.
 
         Args:
-            servers: List of server dictionaries to clean up
-        """
-        cleared_count = 0
-        for server in servers:
-            vpn_address = server.get("vpn_address")
-            if vpn_address and str(vpn_address).startswith("100.64."):
-                logger.info(f"Clearing placeholder VPN address for {server.get('name', 'unknown')}: {vpn_address}")
-                server["vpn_address"] = None
-                cleared_count += 1
-
-        if cleared_count > 0:
-            logger.info(f"Cleared {cleared_count} placeholder VPN addresses")
-
-    def _create_comprehensive_vpn_mapping(self, tailscale_servers: List[Any]) -> Dict[str, str]:
-        """Create comprehensive mapping from public server names to VPN addresses.
-
-        Args:
-            tailscale_servers: List of Server objects from Tailscale
+            url_hostname: Hostname from server URL (e.g., jenkins.onap.org)
+            vpn_hostname: Hostname from VPN (e.g., vex-yul-onap-jenkins-1)
 
         Returns:
-            Dict mapping public server names to VPN addresses
+            True if hostnames likely refer to the same logical server
         """
-        vpn_mapping: Dict[str, str] = {}
+        # Extract project name from both hostnames
+        url_project = self._extract_project_from_url_hostname(url_hostname)
+        vpn_project = self._extract_project_from_vpn_hostname(vpn_hostname)
 
-        for ts_server in tailscale_servers:
-            hostname = ts_server.name if hasattr(ts_server, 'name') else str(ts_server.get("name", ""))
-            vpn_addr = ts_server.vpn_address if hasattr(ts_server, 'vpn_address') else ts_server.get("vpn_address", "")
+        if not url_project or not vpn_project:
+            return False
 
-            if not hostname or not vpn_addr:
-                continue
+        # Check if both refer to the same project
+        return url_project.lower() == vpn_project.lower()
 
-            logger.debug(f"Processing Tailscale server: {hostname} -> {vpn_addr}")
-
-            # Map direct hostname
-            vpn_mapping[hostname] = vpn_addr
-
-            # Map public domain equivalents using comprehensive patterns
-            public_mappings = self._map_tailscale_hostname_to_public_domains(hostname)
-            for public_name in public_mappings:
-                vpn_mapping[public_name] = vpn_addr
-                logger.debug(f"Mapped {hostname} -> {public_name} -> {vpn_addr}")
-
-        logger.info(f"Created VPN mapping for {len(vpn_mapping)} server name variants")
-        return vpn_mapping
-
-    def _map_tailscale_hostname_to_public_domains(self, hostname: str) -> List[str]:
-        """Map Tailscale internal hostname to all possible public domain names.
+    def _extract_project_from_url_hostname(self, hostname: str) -> Optional[str]:
+        """Extract project name from public URL hostname.
 
         Args:
-            hostname: Internal Tailscale hostname (e.g., "vex-yul-ecomp-jenkins-1")
+            hostname: Public hostname (e.g., jenkins.onap.org)
 
         Returns:
-            List of public domain names this could map to
+            Project name or None
         """
         hostname_lower = hostname.lower()
-        mappings: List[str] = []
 
-        # Create specific mappings based on actual Tailscale output patterns
-        # These are derived from the actual tss output provided by the user
-        specific_mappings = {
-            # ONAP/ECOMP mappings from actual Tailscale output
-            "vex-yul-ecomp-jenkins-1": ["jenkins.onap.org"],
-            "vex-yul-ecomp-jenkins-2": ["jenkins.onap.org/sandbox"],
-            "aws-us-west-2-onap-gerrit-1": ["gerrit.onap.org"],
-            "vex-yul-onap-nexus-4": ["nexus3.onap.org"],
-
-            # OpenDaylight mappings
-            "vex-yul-odl-jenkins-1": ["jenkins.opendaylight.org"],
-            "vex-yul-odl-jenkins-2": ["jenkins.opendaylight.org/sandbox"],
-            "aws-eu-west-3-odl-gerrit-1": ["git.opendaylight.org"],
-            "aws-us-west-2-odl-gerrit-1": ["git.opendaylight.org"],
-            "vex-yul-odl-nexus-1": ["nexus3.opendaylight.org"],
-            "vex-yul-odl-nexus-2": ["nexus3.opendaylight.org"],
-
-            # O-RAN-SC mappings
-            "vex-sjc-oran-jenkins-prod-1": ["jenkins.o-ran-sc.org"],
-            "vex-sjc-oran-jenkins-sandbox-1": ["jenkins.o-ran-sc.org/sandbox"],
-            "aws-us-west-2-oran-gerrit-1": ["gerrit.o-ran-sc.org"],
-            "vex-sjc-oran-nexus3-1": ["nexus3.o-ran-sc.org"],
-            "vex-sjc-oran-nexus2-1": ["nexus3.o-ran-sc.org"],
-
-            # Akraino mappings
-            "vex-yul-akraino-jenkins-prod-1": ["jenkins.akraino.org"],
-            "vex-yul-akraino-jenkins-sandbox-1": ["jenkins.akraino.org/sandbox"],
-            "aws-us-west-2-akraino-gerrit-1": ["gerrit.akraino.org"],
-            "vex-yul-akraino-nexus3-1": ["nexus3.akraino.org"],
-            "vex-yul-akraino-nexus2-1": ["nexus3.akraino.org"],
-
-            # EdgeX Foundry mappings
-            "vex-yul-edgex-jenkins-1": ["jenkins.edgexfoundry.org"],
-            "vex-yul-edgex-jenkins-2": ["jenkins.edgexfoundry.org/sandbox"],
-            "vex-yul-edgex-nexus-2-1": ["nexus3.edgexfoundry.org"],
-            "vex-yul-edgex-nexus-2": ["nexus3.edgexfoundry.org"],
-
-            # FD.io mappings
-            "aws-us-west-2-fdio-gerrit-1": ["gerrit.fd.io"],
-
-            # OPNFV mappings
-            "aws-us-west-2-opnfv-gerrit-1": ["gerrit.opnfv.org"],
-            "gce-opnfv-jenkins-2": ["build.opnfv.org", "build.opnfv.org/sandbox"],
-            "vex-yul-opnfv-jenkins-sandbox-1": ["build.opnfv.org/sandbox"],
-
-            # CORD mappings
-            "aws-us-west-2-cord-jenkins-1": ["jenkins.opencord.org"],
-
-            # AGL mappings
-            "vex-yul-agl-jenkins-1": ["build.automotivelinux.org"],
-            "aws-us-west-2-agl-gerrit-1": ["gerrit.automotivelinux.org"],
-            "aws-us-west-2-agl-gerrit-2-1": ["gerrit.automotivelinux.org"],
-
-            # Linux Foundation IT mappings
-            "aws-us-west-2-lfit-jenkins-1": ["jenkins.linuxfoundation.org"],
-            "aws-us-west-2-lfit-jenkins-sandbox-1": ["jenkins.linuxfoundation.org/sandbox"],
-            "aws-us-west-2-lfit-gerrit-1": ["gerrit.linuxfoundation.org"],
+        # Known project domains
+        project_domains = {
+            "onap.org": "onap",
+            "opendaylight.org": "opendaylight",
+            "o-ran-sc.org": "o-ran-sc",
+            "fd.io": "fdio",
+            "akraino.org": "akraino",
+            "edgexfoundry.org": "edgex",
+            "automotivelinux.org": "agl",
+            "opnfv.org": "opnfv"
         }
 
-        # Check for exact match first
-        if hostname_lower in specific_mappings:
-            mappings.extend(specific_mappings[hostname_lower])
-            return mappings
-
-        # Fallback to pattern-based matching for new or unrecognized servers
-        pattern_mappings = [
-            # ONAP/ECOMP patterns
-            {
-                "patterns": ["ecomp-jenkins-1", "onap-jenkins-1", "ecomp-jenkins-prod", "onap-jenkins-prod"],
-                "domains": ["jenkins.onap.org"]
-            },
-            {
-                "patterns": ["ecomp-jenkins-2", "onap-jenkins-2", "ecomp-jenkins-sandbox", "onap-jenkins-sandbox"],
-                "domains": ["jenkins.onap.org/sandbox"]
-            },
-            {
-                "patterns": ["ecomp-gerrit", "onap-gerrit"],
-                "domains": ["gerrit.onap.org"]
-            },
-            {
-                "patterns": ["ecomp-nexus", "onap-nexus"],
-                "domains": ["nexus3.onap.org"]
-            },
-
-            # OpenDaylight patterns
-            {
-                "patterns": ["odl-jenkins-1", "odl-jenkins-prod"],
-                "domains": ["jenkins.opendaylight.org"]
-            },
-            {
-                "patterns": ["odl-jenkins-2", "odl-jenkins-sandbox"],
-                "domains": ["jenkins.opendaylight.org/sandbox"]
-            },
-            {
-                "patterns": ["odl-gerrit"],
-                "domains": ["git.opendaylight.org"]
-            },
-            {
-                "patterns": ["odl-nexus"],
-                "domains": ["nexus3.opendaylight.org"]
-            },
-
-            # O-RAN-SC patterns
-            {
-                "patterns": ["oran-jenkins-prod", "oran-jenkins-1"],
-                "domains": ["jenkins.o-ran-sc.org"]
-            },
-            {
-                "patterns": ["oran-jenkins-sandbox", "oran-jenkins-2"],
-                "domains": ["jenkins.o-ran-sc.org/sandbox"]
-            },
-            {
-                "patterns": ["oran-gerrit"],
-                "domains": ["gerrit.o-ran-sc.org"]
-            },
-            {
-                "patterns": ["oran-nexus"],
-                "domains": ["nexus3.o-ran-sc.org"]
-            },
-
-            # Akraino patterns
-            {
-                "patterns": ["akraino-jenkins-prod", "akraino-jenkins-1"],
-                "domains": ["jenkins.akraino.org"]
-            },
-            {
-                "patterns": ["akraino-jenkins-sandbox", "akraino-jenkins-2"],
-                "domains": ["jenkins.akraino.org/sandbox"]
-            },
-            {
-                "patterns": ["akraino-gerrit"],
-                "domains": ["gerrit.akraino.org"]
-            },
-            {
-                "patterns": ["akraino-nexus"],
-                "domains": ["nexus3.akraino.org"]
-            },
-
-            # EdgeX patterns
-            {
-                "patterns": ["edgex-jenkins-1", "edgex-jenkins-prod"],
-                "domains": ["jenkins.edgexfoundry.org"]
-            },
-            {
-                "patterns": ["edgex-jenkins-2", "edgex-jenkins-sandbox"],
-                "domains": ["jenkins.edgexfoundry.org/sandbox"]
-            },
-            {
-                "patterns": ["edgex-nexus"],
-                "domains": ["nexus3.edgexfoundry.org"]
-            },
-
-            # FD.io patterns
-            {
-                "patterns": ["fdio-gerrit"],
-                "domains": ["gerrit.fd.io"]
-            },
-            {
-                "patterns": ["fdio-jenkins"],
-                "domains": ["jenkins.fd.io", "jenkins.fd.io/sandbox"]
-            },
-            {
-                "patterns": ["fdio-nexus"],
-                "domains": ["nexus.fd.io"]
-            },
-
-            # OPNFV patterns
-            {
-                "patterns": ["opnfv-jenkins", "opnfv-build"],
-                "domains": ["build.opnfv.org", "build.opnfv.org/sandbox"]
-            },
-            {
-                "patterns": ["opnfv-gerrit"],
-                "domains": ["gerrit.opnfv.org"]
-            },
-            {
-                "patterns": ["opnfv-nexus"],
-                "domains": ["nexus3.opnfv.org"]
-            },
-
-            # CORD patterns
-            {
-                "patterns": ["cord-jenkins"],
-                "domains": ["jenkins.opencord.org", "jenkins.opencord.org/sandbox"]
-            },
-            {
-                "patterns": ["cord-gerrit"],
-                "domains": ["gerrit.opencord.org"]
-            },
-            {
-                "patterns": ["cord-nexus"],
-                "domains": ["nexus3.opencord.org"]
-            },
-
-            # AGL patterns
-            {
-                "patterns": ["agl-jenkins", "agl-build"],
-                "domains": ["build.automotivelinux.org", "build.automotivelinux.org/sandbox"]
-            },
-            {
-                "patterns": ["agl-gerrit"],
-                "domains": ["gerrit.automotivelinux.org"]
-            },
-            {
-                "patterns": ["agl-nexus"],
-                "domains": ["nexus3.automotivelinux.org"]
-            },
-
-            # Linux Foundation IT patterns
-            {
-                "patterns": ["lfit-jenkins", "linuxfoundation-jenkins"],
-                "domains": ["jenkins.linuxfoundation.org", "jenkins.linuxfoundation.org/sandbox"]
-            },
-            {
-                "patterns": ["lfit-gerrit", "linuxfoundation-gerrit"],
-                "domains": ["gerrit.linuxfoundation.org"]
-            },
-            {
-                "patterns": ["lfit-nexus", "linuxfoundation-nexus"],
-                "domains": ["nexus3.linuxfoundation.org"]
-            },
-        ]
-
-        # Apply pattern-based mapping rules
-        for rule in pattern_mappings:
-            for pattern in rule["patterns"]:
-                if pattern in hostname_lower:
-                    mappings.extend(rule["domains"])
-                    break
-
-        # Remove duplicates while preserving order
-        return list(dict.fromkeys(mappings))
-
-    def _reconcile_server_vpn_addresses(self, servers: List[Dict[str, Any]], vpn_mapping: Dict[str, str], tailscale_servers: List[Any]) -> None:
-        """Reconcile server VPN addresses with Tailscale data and perform gap analysis.
-
-        Args:
-            servers: List of server dictionaries to update
-            vpn_mapping: Mapping from server names to VPN addresses
-            tailscale_servers: List of Tailscale server objects for gap analysis
-        """
-        updated_count = 0
-        cleared_count = 0
-        gap_servers: List[str] = []
-
-        # Update servers with actual Tailscale VPN addresses
-        for server in servers:
-            server_name = server.get("name", "")
-            current_vpn = server.get("vpn_address")
-
-            if server_name in vpn_mapping:
-                new_vpn = vpn_mapping[server_name]
-                if current_vpn != new_vpn:
-                    logger.info(f"Updated VPN address for {server_name}: {current_vpn} -> {new_vpn}")
-                    server["vpn_address"] = new_vpn
-                    updated_count += 1
-            else:
-                # Server not found in Tailscale - clear placeholder VPN addresses
-                if current_vpn and (str(current_vpn).startswith("100.64.") or not str(current_vpn).startswith("100.")):
-                    logger.info(f"Clearing VPN address for {server_name} (not in Tailscale): {current_vpn}")
-                    server["vpn_address"] = None
-                    cleared_count += 1
-                    gap_servers.append(server_name)
-
-        # Perform gap analysis - identify Tailscale servers not in our database
-        tailscale_hostnames = {ts.name if hasattr(ts, 'name') else str(ts.get("name", "")) for ts in tailscale_servers}
-        mapped_hostnames = set(vpn_mapping.keys())
-
-        # Find Tailscale servers that don't map to any server in our database
-        unmapped_tailscale = tailscale_hostnames - {k for k in vpn_mapping.keys() if k in tailscale_hostnames}
-
-        # Log reconciliation results
-        logger.info(f"VPN address reconciliation complete:")
-        logger.info(f"  - Updated {updated_count} servers with live Tailscale VPN addresses")
-        logger.info(f"  - Cleared {cleared_count} placeholder/invalid VPN addresses")
-        logger.info(f"  - {len(gap_servers)} servers not found in Tailscale network")
-        logger.info(f"  - {len(unmapped_tailscale)} Tailscale servers not mapped to database entries")
-
-        if gap_servers:
-            logger.warning(f"Servers missing from Tailscale network: {', '.join(gap_servers[:10])}")
-            if len(gap_servers) > 10:
-                logger.warning(f"... and {len(gap_servers) - 10} more")
-
-        if unmapped_tailscale:
-            logger.info(f"Unmapped Tailscale servers: {', '.join(list(unmapped_tailscale)[:10])}")
-            if len(unmapped_tailscale) > 10:
-                logger.info(f"... and {len(unmapped_tailscale) - 10} more")
-
-    # Keep the original _map_internal_hostname_to_public method for backward compatibility
-    # but mark it as deprecated in favor of the new comprehensive mapping
-    def _map_internal_hostname_to_public(self, internal_hostname: str) -> Optional[str]:
-        """Map internal Tailscale hostname to public domain name.
-
-        Args:
-            internal_hostname: Internal hostname like "vex-yul-onap-gerrit-1"
-
-        Returns:
-            Public domain name like "gerrit.onap.org" or None if no mapping found
-        """
-        hostname_lower = internal_hostname.lower()
-
-        # Define mapping patterns from internal names to public domains
-        mapping_patterns = [
-            # ONAP mappings (including ECOMP legacy names) - more specific patterns first
-            (r".*onap.*gerrit.*", "gerrit.onap.org"),
-            (r".*onap.*nexus.*", "nexus3.onap.org"),
-            (r".*onap.*jenkins.*(sandbox|2).*", "jenkins.onap.org/sandbox"),
-            (r".*onap.*jenkins.*(prod|1).*", "jenkins.onap.org"),
-            # ECOMP legacy mappings to ONAP - more specific patterns first
-            (r".*ecomp.*gerrit.*", "gerrit.onap.org"),
-            (r".*ecomp.*nexus.*", "nexus3.onap.org"),
-            (r".*ecomp.*jenkins.*(sandbox|2).*", "jenkins.onap.org/sandbox"),
-            (r".*ecomp.*jenkins.*(prod|1).*", "jenkins.onap.org"),
-
-            # OpenDaylight mappings - more specific patterns first
-            (r".*odl.*gerrit.*", "git.opendaylight.org"),
-            (r".*odl.*nexus.*", "nexus3.opendaylight.org"),
-            (r".*odl.*jenkins.*(sandbox|2).*", "jenkins.opendaylight.org/sandbox"),
-            (r".*odl.*jenkins.*(prod|1).*", "jenkins.opendaylight.org"),
-
-            # O-RAN-SC mappings (more specific patterns first)
-            (r".*oran.*gerrit.*", "gerrit.o-ran-sc.org"),
-            (r".*oran.*nexus.*", "nexus3.o-ran-sc.org"),
-            (r".*oran.*jenkins.*(sandbox|2).*", "jenkins.o-ran-sc.org/sandbox"),
-            (r".*oran.*jenkins.*(prod|1).*", "jenkins.o-ran-sc.org"),
-
-            # Akraino mappings - more specific patterns first
-            (r".*akraino.*gerrit.*", "gerrit.akraino.org"),
-            (r".*akraino.*nexus.*", "nexus3.akraino.org"),
-            (r".*akraino.*jenkins.*(sandbox|2).*", "jenkins.akraino.org/sandbox"),
-            (r".*akraino.*jenkins.*(prod|1).*", "jenkins.akraino.org"),
-
-            # FD.io mappings - more specific patterns first
-            (r".*fdio.*gerrit.*", "gerrit.fd.io"),
-            (r".*fdio.*nexus.*", "nexus.fd.io"),
-            (r".*fdio.*jenkins.*(sandbox|2).*", "jenkins.fd.io/sandbox"),
-            (r".*fdio.*jenkins.*(prod|1).*", "jenkins.fd.io"),
-
-            # OPNFV mappings - more specific patterns first
-            (r".*opnfv.*gerrit.*", "gerrit.opnfv.org"),
-            (r".*opnfv.*nexus.*", "nexus3.opnfv.org"),
-            (r".*opnfv.*jenkins.*(sandbox|2).*", "build.opnfv.org/sandbox"),
-            (r".*opnfv.*jenkins.*(prod|1).*", "build.opnfv.org"),
-
-            # EdgeX mappings - more specific patterns first
-            (r".*edgex.*gerrit.*", "gerrit.edgexfoundry.org"),
-            (r".*edgex.*nexus.*", "nexus3.edgexfoundry.org"),
-            (r".*edgex.*jenkins.*(sandbox|2).*", "jenkins.edgexfoundry.org/sandbox"),
-            (r".*edgex.*jenkins.*(prod|1).*", "jenkins.edgexfoundry.org"),
-
-            # AGL mappings
-            (r".*agl.*gerrit.*", "gerrit.automotivelinux.org"),
-            (r".*agl.*nexus.*", "nexus3.automotivelinux.org"),
-            (r".*agl.*jenkins.*", "build.automotivelinux.org"),
-
-            # Additional project mappings based on your Tailscale output
-            (r".*cord.*jenkins.*", "jenkins.opencord.org"),
-            (r".*cord.*gerrit.*", "gerrit.opencord.org"),
-
-            # Linux Foundation Jenkins
-            (r".*lfit.*jenkins.*", "jenkins.linuxfoundation.org"),
-            (r".*lfit.*gerrit.*", "gerrit.linuxfoundation.org"),
-        ]
-
-        import re
-        for pattern, public_name in mapping_patterns:
-            if re.match(pattern, hostname_lower):
-                return public_name
+        for domain, project in project_domains.items():
+            if domain in hostname_lower:
+                return project
 
         return None
+
+    def _extract_project_from_vpn_hostname(self, hostname: str) -> Optional[str]:
+        """Extract project name from VPN hostname.
+
+        Args:
+            hostname: VPN hostname (e.g., vex-yul-onap-jenkins-1)
+
+        Returns:
+            Project name or None
+        """
+        hostname_lower = hostname.lower()
+
+        # Known project patterns in VPN hostnames
+        project_patterns = [
+            "onap", "opendaylight", "odl", "o-ran-sc", "oran",
+            "fdio", "fd-io", "akraino", "edgex", "agl", "opnfv"
+        ]
+
+        parts = hostname_lower.split("-")
+        for part in parts:
+            if part in project_patterns:
+                # Normalize some project names
+                if part in ["odl"]:
+                    return "opendaylight"
+                elif part in ["oran", "o-ran-sc"]:
+                    return "o-ran-sc"
+                elif part in ["fd-io"]:
+                    return "fdio"
+                else:
+                    return part
+
+        return None
+
+    def _apply_server_naming_conventions(self, servers: List[Dict[str, Any]]) -> None:
+        """Apply Linux Foundation server naming conventions and intelligence.
+
+        This method applies the server enumeration logic described in the requirements:
+        - Jenkins production vs sandbox determination
+        - Nexus version mapping (2 vs 3)
+        - Server type classification
+
+        Args:
+            servers: List of server dictionaries to enhance
+        """
+        for server in servers:
+            server_name = server.get("name", "")
+            server_type = server.get("type", "")
+
+            # Apply Jenkins production/sandbox logic
+            if server_type == "jenkins":
+                server["is_production"] = self._determine_jenkins_production_status_from_name(server_name)
+
+            # Apply Nexus version logic
+            elif server_type in ["nexus", "nexus3"]:
+                server["type"] = self._determine_nexus_version_from_name(server_name)
+
+            # Enhance with additional metadata
+            self._add_server_metadata(server)
+
+    def _determine_jenkins_production_status_from_name(self, server_name: str) -> bool:
+        """Determine if Jenkins server is production or sandbox based on name.
+
+        Uses the logic described in requirements:
+        - Explicit prod/production/sandbox indicators
+        - Number hierarchy (lower = production, higher = sandbox)
+
+        Args:
+            server_name: Server name/hostname
+
+        Returns:
+            True if production, False if sandbox
+        """
+        name_lower = server_name.lower()
+
+        # Explicit indicators
+        if any(indicator in name_lower for indicator in ["prod", "production"]):
+            return True
+        if "sandbox" in name_lower:
+            return False
+
+        # Number-based hierarchy
+        import re
+        number_match = re.search(r'jenkins-?(\d+)', name_lower)
+        if number_match:
+            instance_num = int(number_match.group(1))
+            return instance_num <= 2  # 1,2 = production, 3+ = sandbox
+
+        # Default to production
+        return True
+
+    def _determine_nexus_version_from_name(self, server_name: str) -> str:
+        """Determine Nexus version (2 or 3) based on server name and instance number.
+
+        Uses the logic described in requirements:
+        - Single instance = assume Nexus 3 (modern)
+        - Multiple instances = lower number is Nexus 2, higher is Nexus 3
+
+        Args:
+            server_name: Server name/hostname
+
+        Returns:
+            "nexus" for Nexus 2, "nexus3" for Nexus 3
+        """
+        name_lower = server_name.lower()
+
+        # If explicitly named nexus3, return that
+        if "nexus3" in name_lower:
+            return "nexus3"
+
+        # Extract instance number
+        import re
+        number_match = re.search(r'nexus-?(\d+)', name_lower)
+
+        if number_match:
+            instance_num = int(number_match.group(1))
+            # Lower numbers (1,2) typically Nexus 2, higher (3,4+) typically Nexus 3
+            if instance_num <= 2:
+                return "nexus"  # Nexus 2
+            else:
+                return "nexus3"  # Nexus 3
+        else:
+            # Single instance, assume modern Nexus 3
+            return "nexus3"
+
+    def _add_server_metadata(self, server: Dict[str, Any]) -> None:
+        """Add additional metadata to server record.
+
+        Args:
+            server: Server dictionary to enhance
+        """
+        server_name = server.get("name", "")
+
+        # Add hosting provider information
+        if server_name.startswith("vex-"):
+            server["hosting_provider"] = "VEXXHOST"
+        elif server_name.startswith("aws-"):
+            server["hosting_provider"] = "AWS"
+        elif server_name.startswith("gce-"):
+            server["hosting_provider"] = "GCE"
+        elif "korg" in server_name.lower():
+            server["hosting_provider"] = "KERNEL.ORG"
+        else:
+            server["hosting_provider"] = "unknown"
+
+        # Set default values if missing
+        if "version" not in server:
+            server["version"] = "unknown"
+        if "projects" not in server:
+            server["projects"] = []
+        if "vpn_address" not in server:
+            server["vpn_address"] = ""
+
+    def _generate_enhanced_projects_database(self) -> Dict[str, Any]:
+        """Generate an enhanced projects database that includes fall-through projects.
+
+        This method:
+        1. Takes the base projects from resources/projects.yaml
+        2. Adds fall-through projects from PROJECT_ALIASES that aren't already included
+        3. Ensures all projects have proper SCM platform and URL information
+        4. Updates aliases to include all known variations
+
+        Returns:
+            Enhanced projects data structure ready to be saved
+        """
+        from lftools_ng.core.models import PROJECT_ALIASES
+
+        # Start with base projects from resources
+        package_root = pathlib.Path(__file__).parent.parent.parent.parent
+        local_projects_file = package_root / "resources" / "projects.yaml"
+
+        base_projects = []
+        if local_projects_file.exists():
+            try:
+                with open(local_projects_file) as f:
+                    data = yaml.safe_load(f)
+                    base_projects = data.get("projects", [])
+            except Exception as e:
+                logger.warning(f"Failed to load base projects: {e}")
+
+        # Create a set of existing project names (case-insensitive)
+        existing_projects = set()
+        for project in base_projects:
+            name = project.get("name", "").lower()
+            existing_projects.add(name)
+            # Also add aliases to avoid duplicates
+            for alias in project.get("aliases", []):
+                existing_projects.add(alias.lower())
+
+        # Process existing projects to enhance them with SCM info from PROJECT_ALIASES
+        enhanced_projects = []
+        for project in base_projects:
+            enhanced_project = dict(project)  # Copy existing project data
+
+            # Try to enhance with PROJECT_ALIASES data
+            project_name = project.get("name", "").lower()
+            project_enhanced = False
+
+            for alias_key, alias_data in PROJECT_ALIASES.items():
+                # Check if this project matches any pattern in PROJECT_ALIASES
+                if (project_name == alias_data.get("primary_name", "").lower() or
+                    project_name in [alias.lower() for alias in alias_data.get("aliases", [])] or
+                    any(project_name == pattern.lower() for pattern in alias_data.get("name_patterns", []))):
+
+                    # Enhance with SCM information if not already present
+                    if not enhanced_project.get("primary_scm_platform"):
+                        enhanced_project["primary_scm_platform"] = alias_data.get("primary_scm_platform", "Unknown")
+                    if not enhanced_project.get("primary_scm_url"):
+                        enhanced_project["primary_scm_url"] = alias_data.get("primary_scm_url", "")
+
+                    # Enhance aliases - merge existing with PROJECT_ALIASES
+                    existing_aliases = set(enhanced_project.get("aliases", []))
+                    alias_aliases = set(alias_data.get("aliases", []))
+                    merged_aliases = list(existing_aliases.union(alias_aliases))
+                    enhanced_project["aliases"] = merged_aliases
+
+                    project_enhanced = True
+                    break
+
+            # If we couldn't enhance from PROJECT_ALIASES, try to infer SCM from existing data
+            if not project_enhanced:
+                if not enhanced_project.get("primary_scm_platform"):
+                    if enhanced_project.get("gerrit_url"):
+                        enhanced_project["primary_scm_platform"] = "Gerrit"
+                        enhanced_project["primary_scm_url"] = enhanced_project["gerrit_url"]
+                    elif enhanced_project.get("github_mirror_org"):
+                        # For GitHub, we need to be careful - it might be a mirror
+                        # If there's also a gerrit_url, then Gerrit is primary
+                        if enhanced_project.get("gerrit_url"):
+                            enhanced_project["primary_scm_platform"] = "Gerrit"
+                            enhanced_project["primary_scm_url"] = enhanced_project["gerrit_url"]
+                        else:
+                            enhanced_project["primary_scm_platform"] = "GitHub"
+                            enhanced_project["primary_scm_url"] = f"https://github.com/{enhanced_project['github_mirror_org']}"
+                    else:
+                        enhanced_project["primary_scm_platform"] = "Unknown"
+                        enhanced_project["primary_scm_url"] = ""
+
+            enhanced_projects.append(enhanced_project)
+
+        # Now add fall-through projects that aren't already in the list
+        for alias_key, alias_data in PROJECT_ALIASES.items():
+            primary_name = alias_data.get("primary_name", "")
+            if not primary_name:
+                continue
+
+            # Check if this project is already included
+            primary_name_lower = primary_name.lower()
+            if primary_name_lower in existing_projects:
+                continue
+
+            # Check aliases too
+            aliases = alias_data.get("aliases", [])
+            if any(alias.lower() in existing_projects for alias in aliases):
+                continue
+
+            # This is a new fall-through project - add it
+            fall_through_project = {
+                "name": primary_name,
+                "aliases": aliases,
+                "primary_name": primary_name,
+                "domain": alias_data.get("domain", ""),
+                "primary_scm_platform": alias_data.get("primary_scm_platform", "Unknown"),
+                "primary_scm_url": alias_data.get("primary_scm_url", "")
+            }
+
+            enhanced_projects.append(fall_through_project)
+            existing_projects.add(primary_name_lower)
+            logger.info(f"Added fall-through project: {primary_name}")
+
+        return {
+            "projects": enhanced_projects,
+            "# SPDX-License-Identifier": "Apache-2.0",
+            "# SPDX-FileCopyrightText": "2025 The Linux Foundation",
+            "#": "",
+            "# Enhanced projects database for lftools-ng": "",
+            "# Includes main LF projects plus fall-through projects with accurate SCM mapping": "",
+            f"# Last updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }

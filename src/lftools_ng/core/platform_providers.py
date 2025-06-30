@@ -570,12 +570,20 @@ class OnePasswordCredentialProvider(CredentialProvider):
                     'value': credential.password
                 })
 
-            # Add notes field (description)
-            if credential.description:
+            # Add notes field (description) - but only if this is not a migrated credential
+            if credential.description and not (credential.metadata and 'migration_origin' in credential.metadata):
                 fields.append({
                     'label': 'notesPlain',
                     'type': 'STRING',
                     'value': credential.description
+                })
+
+            # Add origin/source field for migrated credentials (using STRING type, not CONCEALED)
+            if credential.metadata and 'migration_origin' in credential.metadata:
+                fields.append({
+                    'label': 'origin/source',
+                    'type': 'STRING',
+                    'value': credential.metadata['migration_origin']
                 })
 
             # Add website URL if available in metadata
@@ -623,12 +631,20 @@ class OnePasswordCredentialProvider(CredentialProvider):
                     'value': credential.private_key
                 })
 
-            # Add notes field (description) for generic templates
-            if credential.description:
+            # Add notes field (description) for generic templates - but only if this is not a migrated credential
+            if credential.description and not (credential.metadata and 'migration_origin' in credential.metadata):
                 fields.append({
                     'label': 'notesPlain',
                     'type': 'STRING',
                     'value': credential.description
+                })
+
+            # Add origin/source field for migrated credentials (using STRING type, not CONCEALED)
+            if credential.metadata and 'migration_origin' in credential.metadata:
+                fields.append({
+                    'label': 'origin/source',
+                    'type': 'STRING',
+                    'value': credential.metadata['migration_origin']
                 })
 
         return template

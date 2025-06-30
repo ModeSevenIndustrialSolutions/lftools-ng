@@ -34,6 +34,7 @@ class ServerLocation(Enum):
 
     VEXXHOST = "vexxhost"
     AWS = "aws"
+    GCE = "gce"  # Google Cloud Platform / Google Compute Engine
     KORG = "korg"
     SAAS = "saas"  # For hosted services like JIRA, Confluence, Artifactory
     OTHER = "other"
@@ -74,6 +75,10 @@ class Project:
     nexus3_url: Optional[str] = None
     sonar_url: Optional[str] = None
     logs_url: Optional[str] = None
+
+    # Primary SCM information (for source code management)
+    primary_scm_platform: Optional[str] = None  # "Gerrit", "GitHub", "GitLab", etc.
+    primary_scm_url: Optional[str] = None  # Full URL to the primary SCM
 
     # Metadata
     created: datetime = field(default_factory=datetime.now)
@@ -226,28 +231,36 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "aliases": ["OPNFV", "anuket", "opnfv"],
         "previous_names": ["OPNFV"],
         "name_patterns": ["anuket", "opnfv", "anuket (formerly opnfv)"],
-        "domain": "anuket.io"
+        "domain": "anuket.io",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.opnfv.org"
     },
     "onap": {
         "primary_name": "ONAP",
-        "aliases": ["ONAP", "onap", "ECOMP"],
+        "aliases": ["ONAP", "onap", "ECOMP", "ecomp"],
         "previous_names": ["ECOMP"],
         "name_patterns": ["onap", "ecomp"],
-        "domain": "onap.org"
+        "domain": "onap.org",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.onap.org"
     },
     "opendaylight": {
         "primary_name": "OpenDaylight",
         "aliases": ["OpenDaylight", "ODL", "opendaylight", "odl"],
         "previous_names": [],
         "name_patterns": ["opendaylight", "odl"],
-        "domain": "opendaylight.org"
+        "domain": "opendaylight.org",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://git.opendaylight.org/gerrit"
     },
     "o-ran-sc": {
         "primary_name": "O-RAN Software Community",
         "aliases": ["O-RAN", "ORAN", "O-RAN-SC", "o-ran-sc", "oran"],
         "previous_names": [],
         "name_patterns": ["o-ran", "oran", "o-ran-sc", "o-ran software community"],
-        "domain": "o-ran-sc.org"
+        "domain": "o-ran-sc.org",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.o-ran-sc.org"
     },
     # Additional known projects with aliases
     "agl": {
@@ -255,48 +268,135 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "aliases": ["AGL", "agl"],
         "previous_names": [],
         "name_patterns": ["agl", "automotive grade linux"],
-        "domain": "automotivelinux.org"
+        "domain": "automotivelinux.org",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.automotivelinux.org"
     },
     "akraino": {
         "primary_name": "Akraino Edge Stack",
         "aliases": ["Akraino", "akraino"],
         "previous_names": [],
         "name_patterns": ["akraino", "akraino edge stack"],
-        "domain": "akraino.org"
+        "domain": "akraino.org",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.akraino.org"
     },
     "edgex": {
         "primary_name": "EdgeX Foundry",
         "aliases": ["EdgeX", "edgex", "EdgeX Foundry"],
         "previous_names": [],
         "name_patterns": ["edgex", "edgex foundry"],
-        "domain": "edgexfoundry.org"
+        "domain": "edgexfoundry.org",
+        "primary_scm_platform": "GitHub",
+        "primary_scm_url": "https://github.com/edgexfoundry"
     },
     FDIO_PROJECT_KEY: {
         "primary_name": "Fast Data Project",
         "aliases": ["FD.io", FDIO_PROJECT_KEY, "Fast Data"],
         "previous_names": [],
         "name_patterns": [FDIO_PROJECT_KEY, "fdio", "fast data"],
-        "domain": "fd.io"
+        "domain": "fd.io",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.fd.io"
     },
     "opencord": {
         "primary_name": "OpenCORD",
         "aliases": ["OpenCORD", "opencord", "CORD", "cord"],
         "previous_names": [],
         "name_patterns": ["opencord", "cord", "central office re-architected as a datacenter"],
-        "domain": "opencord.org"
+        "domain": "opencord.org",
+        "primary_scm_platform": "Gerrit",
+        "primary_scm_url": "https://gerrit.opencord.org"
     },
     "hyperledger": {
         "primary_name": "Hyperledger",
         "aliases": ["HyperLedger", "Hyperledger", "hyperledger"],
         "previous_names": [],
         "name_patterns": ["hyperledger", "hyper ledger"],
-        "domain": "hyperledger.org"
+        "domain": "hyperledger.org",
+        "primary_scm_platform": "GitHub",
+        "primary_scm_url": "https://github.com/hyperledger"
     },
     "zowe": {
         "primary_name": "Zowe",
         "aliases": ["Zowe", "zowe"],
         "previous_names": [],
         "name_patterns": ["zowe"],
-        "domain": "zowe.org"
+        "domain": "zowe.org",
+        "primary_scm_platform": "GitHub",
+        "primary_scm_url": "https://github.com/zowe"
+    },
+    # Fall-through projects not listed on platforms inventory but hosted by LF
+    "jenkins-ci": {
+        "primary_name": "Jenkins CI",
+        "aliases": ["Jenkins", "jenkins", "jenkinsci", "jenkins-ci"],
+        "previous_names": [],
+        "name_patterns": ["jenkins", "jenkinsci", "jenkins ci"],
+        "domain": "jenkins.io",
+        "primary_scm_platform": "GitHub",
+        "primary_scm_url": "https://github.com/jenkinsci"
+    },
+    "kernel-org": {
+        "primary_name": "Kernel.org",
+        "aliases": ["KORG", "korg", "kernel.org", "kernel", "linux-kernel"],
+        "previous_names": [],
+        "name_patterns": ["korg", "kernel", "kernel.org", "linux kernel"],
+        "domain": "kernel.org",
+        "primary_scm_platform": "Git",
+        "primary_scm_url": "https://git.kernel.org"
+    },
+    "lfit": {
+        "primary_name": "Linux Foundation IT",
+        "aliases": ["LFIT", "lfit", "linuxfoundation", "linux-foundation"],
+        "previous_names": [],
+        "name_patterns": ["lfit", "linux foundation it"],
+        "domain": "linuxfoundation.org",
+        "primary_scm_platform": "GitHub",
+        "primary_scm_url": "https://github.com/lfit"
+    },
+    "yocto": {
+        "primary_name": "Yocto Project",
+        "aliases": ["Yocto", "yocto"],
+        "previous_names": [],
+        "name_patterns": ["yocto", "yocto project"],
+        "domain": "yoctoproject.org",
+        "primary_scm_platform": "Git",
+        "primary_scm_url": "https://git.yoctoproject.org"
+    },
+    "cip": {
+        "primary_name": "Civil Infrastructure Platform",
+        "aliases": ["CIP", "cip"],
+        "previous_names": [],
+        "name_patterns": ["cip", "civil infrastructure platform"],
+        "domain": "cip-project.org",
+        "primary_scm_platform": "GitLab",
+        "primary_scm_url": "https://gitlab.com/cip-project"
+    },
+    "cti": {
+        "primary_name": "Core Technologies Initiative",
+        "aliases": ["CTI", "cti"],
+        "previous_names": [],
+        "name_patterns": ["cti", "core technologies initiative"],
+        "domain": "coreinfrastructure.org",
+        "primary_scm_platform": "GitHub",
+        "primary_scm_url": "https://github.com/coreinfrastructure"
+    },
+    "rot": {
+        "primary_name": "Radio over IP",
+        "aliases": ["ROT", "rot", "radio-over-ip"],
+        "previous_names": [],
+        "name_patterns": ["rot", "radio over ip"],
+        "domain": "radiooverip.org",
+        "primary_scm_platform": "Unknown",
+        "primary_scm_url": ""
+    },
+    "wl": {
+        "primary_name": "Windriver Linux",
+        "aliases": ["WL", "wl", "windriver", "wind-river"],
+        "previous_names": [],
+        "name_patterns": ["wl", "windriver", "wind river"],
+        "domain": "windriver.com",
+        "primary_scm_platform": "Unknown",
+        "primary_scm_url": ""
     }
 }

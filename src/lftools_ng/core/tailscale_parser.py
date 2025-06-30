@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import platform
+import re
 import subprocess
 from typing import Any, Dict, List, Optional
 
@@ -153,7 +154,6 @@ class TailscaleParser:
         """Parse a Tailscale peer into a Server object.
 
         Args:
-            peer_id: Tailscale peer ID.
             peer_info: Peer information dictionary.
 
         Returns:
@@ -185,13 +185,19 @@ class TailscaleParser:
         # Determine project association from hostname
         project_names = self._extract_project_from_hostname(hostname)
 
+        # For Jenkins servers, determine if production or sandbox
+        is_production = True
+        if server_type == ServerType.JENKINS:
+            is_production = self._determine_jenkins_production_status(hostname)
+
         return Server(
             name=hostname,
             url=server_url,
             server_type=server_type,
             vpn_address=vpn_address,
             location=location,
-            projects=project_names
+            projects=project_names,
+            is_production=is_production
         )
 
     def _is_infrastructure_server(self, hostname: str) -> bool:
@@ -263,7 +269,8 @@ class TailscaleParser:
         elif "nexus3" in hostname_lower:
             return ServerType.NEXUS3
         elif "nexus" in hostname_lower:
-            return ServerType.NEXUS
+            # Determine if this is Nexus 2 or 3 based on instance number
+            return self._determine_nexus_version_from_hostname(hostname_lower)
         elif "sonar" in hostname_lower:
             return ServerType.SONAR
         elif "artifactory" in hostname_lower:
@@ -291,6 +298,8 @@ class TailscaleParser:
             return ServerLocation.VEXXHOST
         elif "aws" in hostname_lower or "amazonaws" in hostname_lower:
             return ServerLocation.AWS
+        elif "gce" in hostname_lower or "gcp" in hostname_lower or "googlecloud" in hostname_lower:
+            return ServerLocation.GCE
         elif "korg" in hostname_lower or "kernel.org" in hostname_lower:
             return ServerLocation.KORG
         else:
@@ -463,16 +472,45 @@ class TailscaleParser:
 
         matcher = get_project_matcher()
 
-        # Try to match each part
-        for part in hostname_parts:
-            # Skip common infrastructure terms and location codes
-            if part in ['jenkins', 'gerrit', 'nexus', 'nexus3', 'sonar', 'build', 'ci', 'prod', 'sandbox',
-                       'vex', 'aws', 'gce', 'yul', 'sjc', 'us', 'west', 'east', 'north', 'south',
-                       'server', 'host', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']:
+        # Infrastructure terms that should be skipped when alone
+        skip_terms = {
+            'jenkins', 'gerrit', 'nexus', 'nexus3', 'nexus2', 'sonar', 'build', 'prod', 'production', 'sandbox',
+            'vex', 'aws', 'gce', 'yul', 'sjc', 'us', 'west', 'east', 'north', 'south',
+            'server', 'host', 'gitolite', 'cregit', 'social', 'jira', 'wfx', 'rhel9', 'ap', 'southeast',
+            '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'
+        }
+
+        # Try to match multi-word combinations first (more specific)
+        for i in range(len(hostname_parts)):
+            for j in range(i + 2, min(i + 4, len(hostname_parts) + 1)):  # Try 2-3 word combinations
+                combined = ' '.join(hostname_parts[i:j])
+                if all(part not in skip_terms for part in hostname_parts[i:j]):  # Only if no part is a skip term
+                    primary_name = matcher.get_primary_name(combined)
+                    if primary_name:
+                        project_names.append(primary_name)
+
+        # Try individual parts (but include some multi-part project names)
+        for i, part in enumerate(hostname_parts):
+            # Skip pure infrastructure terms and location codes
+            if part in skip_terms:
+                continue
+
+            # Special handling for common compound project names
+            if part == 'jenkinsci' or (part == 'jenkins' and i + 1 < len(hostname_parts) and hostname_parts[i + 1] == 'ci'):
+                primary_name = matcher.get_primary_name('jenkins ci')
+                if primary_name:
+                    project_names.append(primary_name)
                 continue
 
             # Try exact project matching
             primary_name = matcher.get_primary_name(part)
+            if primary_name:
+                project_names.append(primary_name)
+
+        # If no matches found, try less strict matching on original hostname
+        if not project_names:
+            # Try the whole hostname base as one term
+            primary_name = matcher.get_primary_name(hostname_base)
             if primary_name:
                 project_names.append(primary_name)
 
@@ -485,3 +523,119 @@ class TailscaleParser:
                 unique_names.append(name)
 
         return unique_names
+
+    def _determine_nexus_version_from_hostname(self, hostname: str) -> ServerType:
+        """Determine Nexus version from hostname based on instance numbers.
+
+        Logic:
+        - If only one nexus instance exists for a project, assume Nexus 3 (modern)
+        - If multiple instances exist, lower numbers are Nexus 2, higher are Nexus 3
+
+        Args:
+            hostname: Server hostname (lowercased).
+
+        Returns:
+            ServerType.NEXUS (for Nexus 2) or ServerType.NEXUS3 (for Nexus 3).
+        """
+        # Extract instance number from hostname
+        # Look for patterns like nexus-1, nexus-2, nexus1, nexus2, etc.
+        number_match = re.search(r'nexus-?(\d+)', hostname)
+
+        if number_match:
+            instance_number = int(number_match.group(1))
+            # Lower instance numbers (1, 2) are typically Nexus 2
+            # Higher instance numbers (3, 4+) are typically Nexus 3
+            if instance_number <= 2:
+                return ServerType.NEXUS  # Nexus 2
+            else:
+                return ServerType.NEXUS3  # Nexus 3
+        else:
+            # No number found, assume modern Nexus 3
+            return ServerType.NEXUS3
+
+    def _determine_jenkins_production_status(self, hostname: str) -> bool:
+        """Determine if a Jenkins server is production or sandbox.
+
+        Logic:
+        - Explicit 'prod' or 'production' in name -> production
+        - Explicit 'sandbox' in name -> sandbox
+        - Lower instance numbers (1, 2) -> production
+        - Higher instance numbers (3+) -> sandbox
+        - Default: production
+
+        Args:
+            hostname: Server hostname.
+
+        Returns:
+            True if production, False if sandbox.
+        """
+        hostname_lower = hostname.lower()
+
+        # Explicit indicators
+        if any(x in hostname_lower for x in ['prod', 'production']):
+            return True
+        if 'sandbox' in hostname_lower:
+            return False
+
+        # Extract instance number
+        number_match = re.search(r'jenkins-?(\d+)', hostname_lower)
+
+        if number_match:
+            instance_number = int(number_match.group(1))
+            # Lower numbers are typically production
+            return instance_number <= 2
+
+        # Default to production
+        return True
+
+    def _extract_location_info(self, hostname: str) -> Dict[str, Optional[str]]:
+        """Extract hosting provider and region information from hostname.
+
+        Args:
+            hostname: Server hostname.
+
+        Returns:
+            Dictionary with 'provider' and 'region' keys.
+        """
+        hostname_lower = hostname.lower()
+        provider = None
+        region = None
+
+        # Extract provider from hostname prefixes
+        if hostname_lower.startswith('vex-'):
+            provider = 'VEXXHOST'
+            # Extract region (e.g., yul from vex-yul-*)
+            parts = hostname_lower.split('-')
+            if len(parts) >= 2:
+                region = parts[1].upper()
+        elif hostname_lower.startswith('aws-'):
+            provider = 'AWS'
+            # Extract region (e.g., us-west-2 from aws-us-west-2-*)
+            parts = hostname_lower.split('-')
+            if len(parts) >= 4:
+                region = f"{parts[1]}-{parts[2]}-{parts[3]}".upper()
+        elif hostname_lower.startswith('gce-'):
+            provider = 'GCE'
+            # GCE regions might follow different patterns
+            parts = hostname_lower.split('-')
+            if len(parts) >= 2:
+                region = parts[1].upper()
+        elif hostname_lower.startswith('pac-'):
+            provider = 'PACKET'  # Now Equinix Metal
+            parts = hostname_lower.split('-')
+            if len(parts) >= 2:
+                region = parts[1].upper()
+        elif hostname_lower.startswith('lin-'):
+            provider = 'LINODE'
+            parts = hostname_lower.split('-')
+            if len(parts) >= 2:
+                region = parts[1].upper()
+        elif hostname_lower.startswith('ser-'):
+            provider = 'SERVARICA'
+            parts = hostname_lower.split('-')
+            if len(parts) >= 2:
+                region = parts[1].upper()
+        elif 'korg' in hostname_lower or 'kernel.org' in hostname_lower:
+            provider = 'KERNEL.ORG'
+
+        return {'provider': provider, 'region': region}
