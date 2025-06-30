@@ -3,9 +3,7 @@
 Test for 1Password origin/source field creation with correct field type.
 """
 
-import pytest
-from unittest.mock import Mock, patch
-from lftools_ng.core.credential_manager import Credential, CredentialType, CredentialScope
+from lftools_ng.core.credential_manager import Credential, CredentialScope, CredentialType
 from lftools_ng.core.platform_providers import OnePasswordCredentialProvider
 
 
@@ -28,8 +26,8 @@ def test_onepassword_credential_with_migration_origin():
             "project": "TestProject",
             "migration_source": "jenkins-cred-id",
             "migration_type": "repository_deployment",
-            "migration_origin": "Migrated from Jenkins"  # This should create origin/source field as STRING
-        }
+            "migration_origin": "Migrated from Jenkins",  # This should create origin/source field as STRING
+        },
     )
 
     # Create OnePassword provider
@@ -86,9 +84,9 @@ def test_onepassword_credential_without_migration_origin():
         target_platform="1password",
         metadata={
             "github_url": "https://github.com/test/repo",
-            "project": "TestProject"
+            "project": "TestProject",
             # No migration_origin field
-        }
+        },
     )
 
     # Create OnePassword provider
@@ -117,9 +115,7 @@ def test_onepassword_non_login_credential_with_migration_origin():
         secret="secret-value",
         source_platform="jenkins",
         target_platform="1password",
-        metadata={
-            "migration_origin": "Migrated from Jenkins"
-        }
+        metadata={"migration_origin": "Migrated from Jenkins"},
     )
 
     # Create OnePassword provider
@@ -162,7 +158,7 @@ def test_onepassword_non_migrated_credential_gets_notesplain():
         metadata={
             "some_other_field": "value"
             # No migration_origin field
-        }
+        },
     )
 
     # Create OnePassword provider

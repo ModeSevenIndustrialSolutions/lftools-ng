@@ -253,8 +253,23 @@ def create_filter_from_options(
     from lftools_ng.core.filters import create_filter_from_args
 
     # Parse comma-separated field lists
-    fields_list = fields.split(',') if fields else None
-    exclude_fields_list = exclude_fields.split(',') if exclude_fields else None
+    # Handle case where arguments might be OptionInfo objects instead of strings
+    fields_str = None
+    if fields:
+        if hasattr(fields, 'split'):
+            fields_str = fields
+        else:
+            fields_str = str(fields)
+
+    exclude_fields_str = None
+    if exclude_fields:
+        if hasattr(exclude_fields, 'split'):
+            exclude_fields_str = exclude_fields
+        else:
+            exclude_fields_str = str(exclude_fields)
+
+    fields_list = fields_str.split(',') if fields_str else None
+    exclude_fields_list = exclude_fields_str.split(',') if exclude_fields_str else None
 
     # Clean whitespace
     if fields_list:

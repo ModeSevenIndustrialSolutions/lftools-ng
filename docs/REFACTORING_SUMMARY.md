@@ -1,8 +1,31 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+SPDX-FileCopyrightText: 2025 The Linux Foundation
+-->
+
 # lftools-ng Data Handling Refactoring Summary
 
 ## Overview
 
-This document summarizes the comprehensive refactoring of the lftools-ng data handling system to implement the requirements for secure, VPN-gated server data management while providing out-of-the-box functionality for projects and repositories.
+This document summarizes the comprehensive refactoring of the lftools-ng data handling system to implement the r## Key Benefits
+
+1. **Security**: Sensitive VPN data never leaves the local environment
+2. **Data Freshness**: All repository data sourced from live SSH discovery
+3. **Scalability**: Server data auto-updates from live VPN network
+4. **Intelligence**: Advanced server classification and naming logic
+5. **Cross-platform**: Works on both macOS and Linux
+6. **Maintainability**: No embedded data to maintain or update
+7. **Compliance**: Network topology not exposed in public packages
+
+## Migration Path
+
+For existing users:
+
+1. Projects continue to work from PROJECT_ALIASES (immediate)
+2. Repositories require one-time SSH rebuild (user prompted)
+3. Existing `servers.yaml` files continue to work
+4. Users can rebuild servers with `--force` to get enhanced data
+5. VPN requirement clearly communicated to usersecure, VPN-gated server data management while providing out-of-the-box functionality for projects and repositories.
 
 ## Key Changes Implemented
 
@@ -20,22 +43,24 @@ This document summarizes the comprehensive refactoring of the lftools-ng data ha
 
 ### 2. Data Packaging Strategy
 
-**Bundled with Package** (Safe for distribution):
-- ✅ `resources/projects.yaml` - Project definitions and aliases
-- ✅ `resources/repositories.yaml` - Public repository information
-- ❌ `servers.yaml` - **NEVER bundled** (contains sensitive VPN data)
+**Generated Locally** (No bundled data):
+- `~/.config/lftools-ng/projects.yaml` - Built from SSH discovery and PROJECT_ALIASES
+- `~/.config/lftools-ng/repositories.yaml` - Built from SSH discovery via Gerrit
+- `~/.config/lftools-ng/servers.yaml` - Built on-demand from Tailscale VPN
+- **All data sources require live discovery** - no pre-built or embedded data
 
-**Generated Locally** (Requires VPN access):
+**Security-Sensitive Data** (Requires VPN access):
 - `~/.config/lftools-ng/servers.yaml` - Built on-demand from Tailscale VPN
 - Contains VPN addresses, internal network topology
 - Only accessible to users with active Tailscale VPN connectivity
 
-### 3. Auto-Initialization Logic
+### 3. Repository Data Discovery
 
-Modified `ProjectManager._auto_initialize_config()`:
-- Automatically copies `projects.yaml` and `repositories.yaml` from resources on first run
-- **Intentionally excludes** `servers.yaml` from auto-initialization
-- Provides clear messaging about VPN requirements for server data
+**SSH-Based Discovery Only**:
+- Repository data is **only** sourced from live SSH connections to Gerrit servers
+- On first run or missing data, user is prompted to rebuild via SSH discovery
+- No fallback to embedded or pre-built repository data
+- Ensures repository list is always current and reflects live server state
 
 ### 4. Server Data Rebuild Process
 
@@ -102,22 +127,28 @@ Modified `ProjectManager._ensure_servers_database_exists()`:
 ## Files Modified
 
 ### Core Files
-- `src/lftools_ng/core/projects.py` - Enhanced server management and VPN integration
+
+- `src/lftools_ng/core/projects.py` - Removed embedded data, SSH discovery only
 - `src/lftools_ng/core/tailscale_parser.py` - Advanced hostname parsing and server logic
 - `src/lftools_ng/core/inventory_parser.py` - Confirmed correct inventory URL
+- `src/lftools_ng/commands/projects.py` - Updated to trigger rebuild when data missing
 
-### Resource Files Created
-- `resources/projects.yaml` - Pre-built project data (8 major LF projects)
-- `resources/repositories.yaml` - Pre-built repository data (27 sample repositories)
+### Legacy Files Removed
+
+- `resources/` directory - **REMOVED** - No longer contains any embedded data
+- All auto-initialization from embedded data sources **REMOVED**
 
 ### Test Files
+
 - `test_refactoring.py` - Comprehensive validation script
 
 ## Testing Results
 
-✅ **All tests passed successfully**:
-- Projects auto-initialize and work out-of-the-box
-- Repositories auto-initialize and work out-of-the-box
+✅ **SSH Discovery Validation**:
+
+- Repository data is **only** sourced from live SSH discovery
+- No fallback to embedded or pre-built data sources
+- Missing repositories.yaml triggers rebuild prompt (not auto-population)
 - Servers require explicit rebuild (not bundled)
 - Tailscale integration works correctly
 - Server naming conventions properly applied
@@ -125,26 +156,31 @@ Modified `ProjectManager._ensure_servers_database_exists()`:
 - VPN gating functions correctly
 
 **Live Test Results**:
-- Found 8 projects from bundled data
-- Found 27 repositories from bundled data
+
+- Found 8 projects from PROJECT_ALIASES (no external files)
+- Found 0 repositories initially (requires SSH rebuild to populate)
 - Built 76 servers from live Tailscale VPN network
 - All hostname parsing logic validated
 
 ## Usage Examples
 
 ### Projects (Work immediately)
+
 ```bash
 lftools-ng projects list
-# ✅ Returns projects immediately from bundled data
+# ✅ Returns projects immediately from PROJECT_ALIASES
 ```
 
-### Repositories (Work immediately)
+### Repositories (Require SSH rebuild)
+
 ```bash
 lftools-ng projects repositories list
-# ✅ Returns repositories immediately from bundled data
+# ⚠️  Prompts to build repository database from SSH discovery
+# ✅ After consent: Builds complete repository database from live Gerrit servers
 ```
 
 ### Servers (Require VPN setup)
+
 ```bash
 lftools-ng projects servers list
 # ⚠️  Prompts to build server database from Tailscale VPN

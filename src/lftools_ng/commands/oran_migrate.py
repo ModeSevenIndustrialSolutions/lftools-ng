@@ -50,26 +50,21 @@ class ProjectAwareMigrationManager:
         self.console = Console()
         self.logger = logging.getLogger(__name__)
 
-        # Load projects data directly from resources
+        # Use unified data loading through ProjectManager
+        from pathlib import Path
+        config_dir = Path.home() / ".config" / "lftools-ng"
+        from lftools_ng.core.projects import ProjectManager
+        self.project_manager = ProjectManager(config_dir)
         self.projects_data = self._load_projects_data()
 
     def _load_projects_data(self) -> Dict[str, Any]:
-        """Load projects data from resources."""
+        """Load projects data using unified data loading mechanism."""
         try:
-            # Get the path to the resources directory
-            from pathlib import Path
-            import lftools_ng
-            resources_dir = Path(lftools_ng.__file__).parent.parent.parent / "resources"
-            projects_file = resources_dir / "projects.yaml"
-
-            if projects_file.exists():
-                import yaml
-                with open(projects_file) as f:
-                    return yaml.safe_load(f) or {}
+            projects_list = self.project_manager.get_projects_data()
+            return {"projects": projects_list}
         except Exception as e:
-            self.logger.warning(f"Could not load projects data: {e}")
-
-        return {}
+            self.logger.warning(f"Could not load projects data via ProjectManager: {e}")
+            return {}
 
     def find_project_by_name(self, project_name: str) -> Optional[Dict[str, Any]]:
         """

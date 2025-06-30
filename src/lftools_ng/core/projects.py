@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import yaml
+from rich.console import Console
+from rich.panel import Panel
 
 # Import GitHub discovery
 from lftools_ng.core.github_discovery import GitHubDiscovery
@@ -28,6 +30,11 @@ YOCTO_AUTOBUILDER_URL = "https://autobuilder.yoctoproject.org"
 FDIO_KEY = "fd.io"
 FDIO_ALT_KEY = "fdio"
 
+# Database file constants
+PROJECTS_FILENAME = "projects.yaml"
+SERVERS_FILENAME = "servers.yaml"
+REPOSITORIES_FILENAME = "repositories.yaml"
+
 
 class ProjectManager:
     """Manages projects and server mappings."""
@@ -37,59 +44,23 @@ class ProjectManager:
 
         Args:
             config_dir: Directory path for configuration files
-            auto_init: Whether to auto-initialize config from resources
+            auto_init: Whether to auto-initialize config (deprecated, kept for compatibility)
         """
         self.config_dir = config_dir
-        self.projects_file = config_dir / "projects.yaml"
-        self.servers_file = config_dir / "servers.yaml"
-        self.repositories_file = config_dir / "repositories.yaml"  # New repositories file
+        self.projects_file = config_dir / PROJECTS_FILENAME
+        self.servers_file = config_dir / SERVERS_FILENAME
+        self.repositories_file = config_dir / REPOSITORIES_FILENAME
+
+        # Track rebuild state to prevent loops
+        self._rebuilding_databases = False
+        self._user_declined_servers = False
+        self._user_declined_projects = False
+        self._user_declined_repositories = False
 
         # Ensure config directory exists
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Auto-initialize configuration from resources if needed
-        if auto_init:
-            self._auto_initialize_config()
-
-    def _auto_initialize_config(self) -> None:
-        """Auto-initialize configuration from resources directory if config files don't exist.
-
-        Note: Only projects.yaml and repositories.yaml are auto-initialized.
-        servers.yaml is intentionally NOT auto-initialized as it contains sensitive
-        VPN addresses and must be built locally via Tailscale integration.
-        """
-        try:
-            # Find the resources directory relative to this file
-            current_file = pathlib.Path(__file__)
-            # Navigate up from src/lftools_ng/core/projects.py to project root
-            project_root = current_file.parent.parent.parent.parent
-            resources_dir = project_root / "resources"
-
-            if not resources_dir.exists():
-                logger.warning(f"Resources directory not found: {resources_dir}")
-                return
-
-            # Only copy safe files that don't contain sensitive information
-            files_to_copy = [
-                ("projects.yaml", self.projects_file),
-                ("repositories.yaml", self.repositories_file)
-                # NOTE: servers.yaml is intentionally excluded - it must be built locally
-            ]
-
-            copied_files = []
-            for resource_file, config_file in files_to_copy:
-                resource_path = resources_dir / resource_file
-                if resource_path.exists() and not config_file.exists():
-                    shutil.copy2(resource_path, config_file)
-                    copied_files.append(resource_file)
-                    logger.info(f"Initialized {config_file} from resources")
-
-            if copied_files:
-                logger.info(f"Auto-initialized configuration with Linux Foundation data: {', '.join(copied_files)}")
-                logger.info("Note: servers.yaml must be built locally via 'lftools-ng projects rebuild-servers'")
-
-        except Exception as e:
-            logger.warning(f"Failed to auto-initialize configuration: {e}")
+        # Note: auto_init is deprecated - data should be built via rebuild commands
 
     def list_projects(self) -> List[Dict[str, Any]]:
         """List all registered projects.
@@ -98,7 +69,11 @@ class ProjectManager:
             List of project dictionaries
         """
         if not self.projects_file.exists():
-            logger.warning(f"Projects file not found: {self.projects_file}")
+            # Only log warning if we're not in the middle of rebuilding databases.
+            # During rebuild operations, it's expected that the projects.yaml file
+            # may not exist yet, and we should use _load_projects_silently() instead.
+            if not self._rebuilding_databases:
+                logger.warning(f"Projects file not found: {self.projects_file}")
             return []
 
         try:
@@ -115,6 +90,32 @@ class ProjectManager:
             logger.error(f"Failed to load projects: {e}")
             return []
 
+    def _load_projects_silently(self) -> List[Dict[str, Any]]:
+        """Load projects without logging warnings if file doesn't exist.
+
+        This method is used during rebuild operations where we don't want
+        to spam the user with "file not found" warnings.
+
+        Returns:
+            List of project dictionaries, empty if file doesn't exist
+        """
+        if not self.projects_file.exists():
+            return []
+
+        try:
+            with open(self.projects_file) as f:
+                data = yaml.safe_load(f)
+                if data is None:
+                    return []
+                projects = data.get("projects", [])
+                if not isinstance(projects, list):
+                    return []
+                # Filter out any None entries that might have been parsed from YAML
+                return [p for p in projects if p is not None]
+        except Exception as e:
+            logger.debug(f"Failed to load projects silently: {e}")
+            return []
+
     def list_servers(self) -> List[Dict[str, Any]]:
         """List all registered servers.
 
@@ -128,7 +129,8 @@ class ProjectManager:
 
         try:
             # Load projects first (needed for server building/mapping)
-            projects = self.list_projects()
+            # Use silent loading to avoid warnings if projects.yaml doesn't exist yet
+            projects = self._load_projects_silently()
 
             servers = []
 
@@ -267,6 +269,27 @@ class ProjectManager:
             logger.info("Generating enhanced projects database with fall-through projects and SCM mapping...")
             enhanced_data = self._generate_enhanced_projects_database()
 
+            # Run GitHub discovery to populate github_mirror_org fields
+            logger.info("Running GitHub organization discovery...")
+            try:
+                github_discovery = GitHubDiscovery()
+                projects_list = enhanced_data.get("projects", [])
+
+                for project in projects_list:
+                    github_org = github_discovery.discover_github_organization(project)
+                    if github_org:
+                        project["github_mirror_org"] = github_org
+                        project["github_url"] = f"https://github.com/{github_org}"
+                        logger.info(f"Found GitHub org for {project['name']}: {github_org}")
+                    else:
+                        logger.debug(f"No GitHub org found for {project['name']}")
+
+                github_discovery.close()
+                logger.info("GitHub discovery completed successfully")
+            except Exception as e:
+                logger.warning(f"GitHub discovery failed: {e}")
+                logger.info("Continuing with projects data without GitHub organization information")
+
             # If a source URL is provided, try to merge it with our enhanced data
             if source_url:
                 logger.info(f"Merging with external source: {source_url}")
@@ -322,8 +345,8 @@ class ProjectManager:
         logger.info("Note: This requires active Tailscale VPN connection for complete server enumeration")
 
         try:
-            # Build from live projects data
-            projects = self.list_projects()
+            # Build from live projects data (silently, without warnings if projects.yaml doesn't exist)
+            projects = self._load_projects_silently()
             servers = self._build_servers_from_projects(projects)
 
             # Enhance with Tailscale VPN data
@@ -344,6 +367,101 @@ class ProjectManager:
 
         except Exception as e:
             logger.error(f"Failed to build servers database: {e}")
+            raise
+
+    def rebuild_repositories_database(
+        self,
+        source_url: Optional[str] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """Rebuild repositories database from live SCM sources.
+
+        This method builds the repositories database by:
+        1. Discovering repositories from each project's primary SCM platform (Gerrit/GitHub)
+        2. Cross-referencing with GitHub mirror organizations
+        3. Mapping repository names bidirectionally between platforms
+        4. Storing comprehensive metadata for each repository
+
+        Args:
+            source_url: Optional URL to fetch repository configuration from (deprecated)
+            force: Force rebuild even if database exists
+
+        Returns:
+            Dictionary with rebuild statistics
+        """
+        if self.repositories_file.exists() and not force:
+            raise ValueError(
+                "Repositories database already exists. Use --force to rebuild."
+            )
+
+        try:
+            logger.info("Rebuilding all data from live sources...")
+
+            # Import repository discovery
+            from lftools_ng.core.repository_discovery import RepositoryDiscovery
+
+            repositories = []
+            projects_discovered = 0
+
+            # Get all projects for repository discovery (silently, without warnings if projects.yaml doesn't exist)
+            projects = self._load_projects_silently()
+
+            with RepositoryDiscovery() as discovery:
+                for project in projects:
+                    project_name = project.get("name", "")
+                    logger.info(f"Discovering repositories for project: {project_name}")
+
+                    try:
+                        project_repos = discovery.discover_project_repositories(project)
+                        repositories.extend(project_repos)
+                        projects_discovered += 1
+                        logger.info(f"Found {len(project_repos)} repositories for {project_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to discover repositories for {project_name}: {e}")
+
+            # Calculate statistics
+            active_repos = len([r for r in repositories if not r.get("archived", False)])
+            archived_repos = len(repositories) - active_repos
+            total_repos = len(repositories)
+
+            # Group by project for additional metadata
+            projects_with_repos = len(set(repo.get("project", "") for repo in repositories))
+
+            # Save the rebuilt database
+            repositories_data = {
+                "repositories": repositories,
+                "total": total_repos,
+                "active": active_repos,
+                "archived": archived_repos,
+                "projects_scanned": len(projects),
+                "projects_with_repos": projects_with_repos,
+                "discovery_metadata": {
+                    "discovery_date": datetime.now().isoformat(),
+                    "discovery_method": "live_scm_discovery",
+                    "platforms_supported": ["gerrit", "github"],
+                }
+            }
+            self._save_yaml_with_header(repositories_data, self.repositories_file)
+
+            logger.info(f"Successfully built repositories database:")
+            logger.info(f"  - {total_repos} total repositories")
+            logger.info(f"  - {active_repos} active repositories")
+            logger.info(f"  - {archived_repos} archived repositories")
+            logger.info(f"  - {projects_discovered} projects processed")
+
+            return {
+                "repositories_count": total_repos,
+                "active_count": active_repos,
+                "archived_count": archived_repos,
+                "projects_count": projects_discovered
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to rebuild repositories database: {e}")
+            raise
+
+        except Exception as e:
+            logger.error(f"Failed to rebuild repositories database: {e}")
             raise
 
     def _build_servers_from_projects(self, projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -446,41 +564,175 @@ class ProjectManager:
         if self.servers_file.exists():
             return True
 
-        # Inform user about VPN requirement
-        logger.warning("Servers database not found!")
-        logger.info("The servers database contains VPN addresses and internal network topology")
-        logger.info("that must be built locally from your Tailscale VPN connection.")
-        logger.info("This ensures sensitive infrastructure data is not bundled with the package.")
+        # Prevent rebuild loops
+        if self._rebuilding_databases:
+            logger.warning("Already rebuilding databases, skipping recursive rebuild")
+            return False
+
+        # If user previously declined, don't ask again
+        if self._user_declined_servers:
+            logger.debug("User previously declined to build servers database")
+            return False
+
+        # Create colorized warning using rich
+        console = Console()
+
+        # Create a nicely formatted warning panel
+        from rich.text import Text
+        warning_text = Text()
+        warning_text.append("⚠️  Servers Database Not Found!\n\n", style="bold yellow")
+        warning_text.append("The servers database contains information about Jenkins servers, Gerrit instances, ", style="white")
+        warning_text.append("Nexus repositories, and other Linux Foundation infrastructure.\n\n", style="white")
+        warning_text.append("This database includes VPN addresses and internal network topology that must be ", style="white")
+        warning_text.append("built locally from your Tailscale VPN connection to ensure sensitive infrastructure ", style="white")
+        warning_text.append("data is not bundled with the package.\n\n", style="white")
+        warning_text.append("Expected location: ", style="white")
+        warning_text.append(str(self.servers_file), style="bold cyan")
+
+        panel = Panel(
+            warning_text,
+            title="[bold red]Database Missing[/bold red]",
+            border_style="red",
+            padding=(1, 2)
+        )
+        console.print(panel)
 
         # Prompt user to build database
         try:
             import typer
-            message = (
-                "Build servers database from live Tailscale VPN data? "
-                "(requires active VPN connection)"
-            )
-            if typer.confirm(message):
-                logger.info("Building servers database from Tailscale VPN network...")
-                self.rebuild_servers_database(force=True)
-                return True
+
+            # Create colorized prompt text
+            from rich.text import Text
+            prompt_text = Text()
+            prompt_text.append("🔧 Build servers database from live Tailscale VPN data?\n", style="bold green")
+            prompt_text.append("   (requires active VPN connection)", style="dim white")
+            console.print(prompt_text)
+
+            if typer.confirm("Continue?"):
+                self._rebuilding_databases = True
+                try:
+                    console.print("🚀 [bold green]Rebuilding all data from live sources...[/bold green]")
+                    self.rebuild_servers_database(force=True)
+                    self._rebuilding_databases = False
+                    return True
+                except Exception as e:
+                    self._rebuilding_databases = False
+                    console.print(f"❌ [red]Failed to build servers database: {e}[/red]")
+                    console.print("🔗 [yellow]Please ensure Tailscale VPN is connected and try again[/yellow]")
+                    return False
             else:
-                logger.warning("User declined to build servers database")
-                logger.info("Server-related commands will have limited functionality")
+                # Remember that user declined
+                self._user_declined_servers = True
+                console.print("⚠️  [yellow]User declined to build servers database[/yellow]")
+                console.print("ℹ️  [dim white]Server-related commands will have limited functionality[/dim white]")
                 return False
+
         except ImportError:
             # If typer not available, try to build automatically
-            logger.info("Servers database not found. Building from Tailscale VPN network...")
-            logger.info("Note: This requires an active Tailscale VPN connection")
+            console.print("ℹ️  [dim white]Servers database not found. Building from Tailscale VPN network...[/dim white]")
+            console.print("📡 [dim white]Note: This requires an active Tailscale VPN connection[/dim white]")
+
             try:
+                self._rebuilding_databases = True
                 self.rebuild_servers_database(force=True)
+                self._rebuilding_databases = False
                 return True
             except Exception as e:
-                logger.error(f"Auto-build failed: {e}")
-                logger.error("Please ensure Tailscale VPN is connected and try again")
+                self._rebuilding_databases = False
+                console.print(f"❌ [red]Auto-build failed: {e}[/red]")
+                console.print("🔗 [yellow]Please ensure Tailscale VPN is connected and try again[/yellow]")
                 return False
-        except Exception as e:
-            logger.error(f"Failed to build servers database: {e}")
+
+    def _ensure_projects_database_exists(self) -> bool:
+        """Ensure projects database exists, prompt to build if missing.
+
+        The projects database contains the mapping of Linux Foundation projects to their
+        corresponding repositories and infrastructure. It requires live data discovery
+        from GitHub APIs and Gerrit instances.
+
+        Returns:
+            True if database exists or was created, False if user declined
+        """
+        if self.projects_file.exists():
+            return True
+
+        # Prevent rebuild loops
+        if self._rebuilding_databases:
+            logger.warning("Already rebuilding databases, skipping recursive rebuild")
             return False
+
+        # If user previously declined, don't ask again
+        if self._user_declined_projects:
+            logger.debug("User previously declined to build projects database")
+            return False
+
+        # Create colorized warning using rich
+        console = Console()
+
+        # Create a nicely formatted warning panel
+        from rich.text import Text
+        warning_text = Text()
+        warning_text.append("⚠️  Projects Database Not Found!\n\n", style="bold yellow")
+        warning_text.append("The projects database contains mappings of Linux Foundation projects to their ", style="white")
+        warning_text.append("repositories, organizations, and infrastructure components.\n\n", style="white")
+        warning_text.append("This database must be built from live data sources including GitHub APIs, ", style="white")
+        warning_text.append("Gerrit instances, and project metadata to ensure up-to-date information.\n\n", style="white")
+        warning_text.append("Expected location: ", style="white")
+        warning_text.append(str(self.projects_file), style="bold cyan")
+
+        panel = Panel(
+            warning_text,
+            title="[bold red]Database Missing[/bold red]",
+            border_style="red",
+            padding=(1, 2)
+        )
+        console.print(panel)
+
+        # Prompt user to build database
+        try:
+            import typer
+
+            # Create colorized prompt text
+            from rich.text import Text
+            prompt_text = Text()
+            prompt_text.append("🔧 Build projects database from live data sources?\n", style="bold green")
+            prompt_text.append("   (requires network access to GitHub APIs and Gerrit)", style="dim white")
+            console.print(prompt_text)
+
+            if typer.confirm("Continue?"):
+                self._rebuilding_databases = True
+                try:
+                    console.print("🚀 [bold green]Rebuilding all data from live sources...[/bold green]")
+                    self.rebuild_projects_database(force=True)
+                    self._rebuilding_databases = False
+                    return True
+                except Exception as e:
+                    self._rebuilding_databases = False
+                    console.print(f"❌ [red]Failed to build projects database: {e}[/red]")
+                    console.print("🔗 [yellow]Please check network connectivity and try again[/yellow]")
+                    return False
+            else:
+                # Remember that user declined
+                self._user_declined_projects = True
+                console.print("⚠️  [yellow]User declined to build projects database[/yellow]")
+                console.print("ℹ️  [dim white]Project-related commands will have limited functionality[/dim white]")
+                return False
+
+        except ImportError:
+            # If typer not available, try to build automatically
+            console.print("ℹ️  [dim white]Projects database not found. Building from live data sources...[/dim white]")
+            console.print("📡 [dim white]Note: This requires network access to GitHub APIs and Gerrit[/dim white]")
+
+            try:
+                self._rebuilding_databases = True
+                self.rebuild_projects_database(force=True)
+                self._rebuilding_databases = False
+                return True
+            except Exception as e:
+                self._rebuilding_databases = False
+                console.print(f"❌ [red]Auto-build failed: {e}[/red]")
+                console.print("🔗 [yellow]Please check network connectivity and try again[/yellow]")
+                return False
 
     def _save_yaml_with_header(self, data: Dict[str, Any], file_path: pathlib.Path) -> None:
         """Save data as YAML with a header comment.
@@ -617,7 +869,7 @@ class ProjectManager:
             projects: List of project dictionaries
         """
         # Create mapping of server URLs to projects
-        server_projects = {}
+        server_projects: Dict[str, List[str]] = {}
 
         for project in projects:
             # Extract server URLs from various project fields (same logic as _build_servers_from_projects)
@@ -974,121 +1226,47 @@ class ProjectManager:
             server["vpn_address"] = ""
 
     def _generate_enhanced_projects_database(self) -> Dict[str, Any]:
-        """Generate an enhanced projects database that includes fall-through projects.
+        """Generate an enhanced projects database from PROJECT_ALIASES.
 
         This method:
-        1. Takes the base projects from resources/projects.yaml
-        2. Adds fall-through projects from PROJECT_ALIASES that aren't already included
-        3. Ensures all projects have proper SCM platform and URL information
-        4. Updates aliases to include all known variations
+        1. Creates projects from PROJECT_ALIASES definitions
+        2. Ensures all projects have proper SCM platform and URL information
+        3. Includes all known project aliases and variations
 
         Returns:
             Enhanced projects data structure ready to be saved
         """
         from lftools_ng.core.models import PROJECT_ALIASES
 
-        # Start with base projects from resources
-        package_root = pathlib.Path(__file__).parent.parent.parent.parent
-        local_projects_file = package_root / "resources" / "projects.yaml"
-
-        base_projects = []
-        if local_projects_file.exists():
-            try:
-                with open(local_projects_file) as f:
-                    data = yaml.safe_load(f)
-                    base_projects = data.get("projects", [])
-            except Exception as e:
-                logger.warning(f"Failed to load base projects: {e}")
-
-        # Create a set of existing project names (case-insensitive)
-        existing_projects = set()
-        for project in base_projects:
-            name = project.get("name", "").lower()
-            existing_projects.add(name)
-            # Also add aliases to avoid duplicates
-            for alias in project.get("aliases", []):
-                existing_projects.add(alias.lower())
-
-        # Process existing projects to enhance them with SCM info from PROJECT_ALIASES
+        # Generate projects from PROJECT_ALIASES only
         enhanced_projects = []
-        for project in base_projects:
-            enhanced_project = dict(project)  # Copy existing project data
 
-            # Try to enhance with PROJECT_ALIASES data
-            project_name = project.get("name", "").lower()
-            project_enhanced = False
-
-            for alias_key, alias_data in PROJECT_ALIASES.items():
-                # Check if this project matches any pattern in PROJECT_ALIASES
-                if (project_name == alias_data.get("primary_name", "").lower() or
-                    project_name in [alias.lower() for alias in alias_data.get("aliases", [])] or
-                    any(project_name == pattern.lower() for pattern in alias_data.get("name_patterns", []))):
-
-                    # Enhance with SCM information if not already present
-                    if not enhanced_project.get("primary_scm_platform"):
-                        enhanced_project["primary_scm_platform"] = alias_data.get("primary_scm_platform", "Unknown")
-                    if not enhanced_project.get("primary_scm_url"):
-                        enhanced_project["primary_scm_url"] = alias_data.get("primary_scm_url", "")
-
-                    # Enhance aliases - merge existing with PROJECT_ALIASES
-                    existing_aliases = set(enhanced_project.get("aliases", []))
-                    alias_aliases = set(alias_data.get("aliases", []))
-                    merged_aliases = list(existing_aliases.union(alias_aliases))
-                    enhanced_project["aliases"] = merged_aliases
-
-                    project_enhanced = True
-                    break
-
-            # If we couldn't enhance from PROJECT_ALIASES, try to infer SCM from existing data
-            if not project_enhanced:
-                if not enhanced_project.get("primary_scm_platform"):
-                    if enhanced_project.get("gerrit_url"):
-                        enhanced_project["primary_scm_platform"] = "Gerrit"
-                        enhanced_project["primary_scm_url"] = enhanced_project["gerrit_url"]
-                    elif enhanced_project.get("github_mirror_org"):
-                        # For GitHub, we need to be careful - it might be a mirror
-                        # If there's also a gerrit_url, then Gerrit is primary
-                        if enhanced_project.get("gerrit_url"):
-                            enhanced_project["primary_scm_platform"] = "Gerrit"
-                            enhanced_project["primary_scm_url"] = enhanced_project["gerrit_url"]
-                        else:
-                            enhanced_project["primary_scm_platform"] = "GitHub"
-                            enhanced_project["primary_scm_url"] = f"https://github.com/{enhanced_project['github_mirror_org']}"
-                    else:
-                        enhanced_project["primary_scm_platform"] = "Unknown"
-                        enhanced_project["primary_scm_url"] = ""
-
-            enhanced_projects.append(enhanced_project)
-
-        # Now add fall-through projects that aren't already in the list
         for alias_key, alias_data in PROJECT_ALIASES.items():
-            primary_name = alias_data.get("primary_name", "")
-            if not primary_name:
-                continue
+            # Use the primary name if available, otherwise use the key
+            project_name = alias_data.get("primary_name") or alias_key
 
-            # Check if this project is already included
-            primary_name_lower = primary_name.lower()
-            if primary_name_lower in existing_projects:
-                continue
-
-            # Check aliases too
-            aliases = alias_data.get("aliases", [])
-            if any(alias.lower() in existing_projects for alias in aliases):
-                continue
-
-            # This is a new fall-through project - add it
-            fall_through_project = {
-                "name": primary_name,
-                "aliases": aliases,
-                "primary_name": primary_name,
-                "domain": alias_data.get("domain", ""),
-                "primary_scm_platform": alias_data.get("primary_scm_platform", "Unknown"),
-                "primary_scm_url": alias_data.get("primary_scm_url", "")
+            # Create project entry with consistent field naming
+            project = {
+                "name": project_name,
+                "aliases": alias_data.get("aliases", []),
+                "previous_names": alias_data.get("previous_names", []),
+                "primary_scm": alias_data.get("primary_scm_platform", "gerrit"),
+                "primary_scm_platform": alias_data.get("primary_scm_platform", "gerrit"),
+                "primary_scm_url": alias_data.get("primary_scm_url", ""),
+                "gerrit_url": alias_data.get("primary_scm_url", "") if alias_data.get("primary_scm_platform", "").lower() == "gerrit" else "",
+                "github_url": alias_data.get("primary_scm_url", "") if alias_data.get("primary_scm_platform", "").lower() == "github" else "",
+                "github_mirror_org": alias_data.get("github_mirror_org", ""),
+                "jenkins_urls": alias_data.get("jenkins_urls", []),
+                "scm_platform": alias_data.get("primary_scm_platform", "gerrit"),
             }
 
-            enhanced_projects.append(fall_through_project)
-            existing_projects.add(primary_name_lower)
-            logger.info(f"Added fall-through project: {primary_name}")
+            # Set GitHub URL if mirror org is available
+            if project["github_mirror_org"]:
+                project["github_url"] = f"https://github.com/{project['github_mirror_org']}"
+
+            enhanced_projects.append(project)
+
+        logger.info(f"Generated {len(enhanced_projects)} projects from PROJECT_ALIASES")
 
         return {
             "projects": enhanced_projects,
@@ -1096,6 +1274,185 @@ class ProjectManager:
             "# SPDX-FileCopyrightText": "2025 The Linux Foundation",
             "#": "",
             "# Enhanced projects database for lftools-ng": "",
-            "# Includes main LF projects plus fall-through projects with accurate SCM mapping": "",
-            f"# Last updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "# Generated from PROJECT_ALIASES definitions": "",
+            "# Last updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+
+    def _ensure_all_databases_exist(self) -> bool:
+        """Check if all required database files exist.
+
+        This method only checks for existence and does NOT automatically rebuild
+        to prevent recursive loops. Individual methods handle their own initialization.
+
+        Returns:
+            True if all databases exist, False otherwise
+        """
+        missing_files: List[str] = []
+
+        # Check which files are missing
+        if not self.projects_file.exists():
+            missing_files.append(PROJECTS_FILENAME)
+        if not self.repositories_file.exists():
+            missing_files.append(REPOSITORIES_FILENAME)
+        if not self.servers_file.exists():
+            missing_files.append(SERVERS_FILENAME)
+
+        if missing_files:
+            logger.debug(f"Missing database files: {', '.join(missing_files)}")
+            return False
+
+        return True
+
+    def get_projects_data(self) -> List[Dict[str, Any]]:
+        """Unified method to get projects data.
+
+        This method should be used by external components instead of direct file access
+        to ensure consistent data loading.
+
+        Returns:
+            List of project dictionaries
+        """
+        return self.list_projects()
+
+    def get_servers_data(self) -> List[Dict[str, Any]]:
+        """Unified method to get servers data.
+
+        This method should be used by external components instead of direct file access
+        to ensure consistent data loading.
+
+        Returns:
+            List of server dictionaries
+        """
+        return self.list_servers()
+
+    def get_repositories_data(self, project: Optional[str] = None, include_archived: bool = False) -> Dict[str, Any]:
+        """Unified method to get repositories data.
+
+        This method should be used by external components instead of direct file access
+        to ensure consistent data loading.
+
+        Args:
+            project: Optional project filter
+            include_archived: Whether to include archived repositories
+
+        Returns:
+            Dictionary with repositories data
+        """
+        return self.list_repositories(project=project, include_archived=include_archived)
+
+    def ensure_projects_database_exists(self) -> bool:
+        """Public method to ensure projects database exists.
+
+        Returns:
+            True if database exists or was created, False if user declined
+        """
+        return self._ensure_projects_database_exists()
+
+    def ensure_repositories_database_exists(self) -> bool:
+        """Public method to ensure repositories database exists.
+
+        Returns:
+            True if database exists or was created, False if user declined
+        """
+        return self._ensure_repositories_database_exists()
+
+    def ensure_servers_database_exists(self) -> bool:
+        """Public method to ensure servers database exists.
+
+        Returns:
+            True if database exists or was created, False if user declined
+        """
+        return self._ensure_servers_database_exists()
+
+    def _ensure_repositories_database_exists(self) -> bool:
+        """Ensure repositories database exists, prompt to build if missing.
+
+        The repositories database contains comprehensive repository information discovered
+        from live SCM sources including Gerrit, GitHub, and GitLab. It requires SSH
+        access to various SCM platforms for complete discovery.
+
+        Returns:
+            True if database exists or was created, False if user declined
+        """
+        if self.repositories_file.exists():
+            return True
+
+        # Prevent rebuild loops
+        if self._rebuilding_databases:
+            logger.warning("Already rebuilding databases, skipping recursive rebuild")
+            return False
+
+        # If user previously declined, don't ask again
+        if getattr(self, '_user_declined_repositories', False):
+            logger.debug("User previously declined to build repositories database")
+            return False
+
+        # Create colorized warning using rich
+        console = Console()
+
+        # Create a nicely formatted warning panel
+        from rich.text import Text
+        warning_text = Text()
+        warning_text.append("⚠️  Repositories Database Not Found!\n\n", style="bold yellow")
+        warning_text.append("The repositories database contains comprehensive repository information ", style="white")
+        warning_text.append("discovered from live SCM sources including Gerrit, GitHub, and GitLab.\n\n", style="white")
+        warning_text.append("This database must be built through SSH discovery from live SCM platforms ", style="white")
+        warning_text.append("to ensure complete and up-to-date repository information.\n\n", style="white")
+        warning_text.append("Expected location: ", style="white")
+        warning_text.append(str(self.repositories_file), style="bold cyan")
+
+        panel = Panel(
+            warning_text,
+            title="[bold red]Database Missing[/bold red]",
+            border_style="red",
+            padding=(1, 2)
+        )
+        console.print(panel)
+
+        # Prompt user to build database
+        try:
+            import typer
+
+            # Create colorized prompt text
+            from rich.text import Text
+            prompt_text = Text()
+            prompt_text.append("🔧 Build repositories database from live SCM sources?\n", style="bold green")
+            prompt_text.append("   (requires SSH access to Gerrit and GitHub APIs)", style="dim white")
+            console.print(prompt_text)
+
+            if typer.confirm("Continue?"):
+                self._rebuilding_databases = True
+                try:
+                    console.print("🚀 [bold green]Rebuilding all data from live sources...[/bold green]")
+                    self.rebuild_repositories_database(force=True)
+                    self._rebuilding_databases = False
+                    return True
+                except Exception as e:
+                    self._rebuilding_databases = False
+                    console.print(f"❌ [red]Failed to build repositories database: {e}[/red]")
+                    console.print("🔗 [yellow]Please check SSH keys and network connectivity[/yellow]")
+                    return False
+            else:
+                # Remember that user declined
+                self._user_declined_repositories = True
+                console.print("⚠️  [yellow]User declined to build repositories database[/yellow]")
+                console.print("ℹ️  [dim white]Repository-related commands will have limited functionality[/dim white]")
+                return False
+
+        except ImportError:
+            # If typer not available, try to build automatically
+            console.print("ℹ️  [dim white]Repositories database not found. Building from live SCM sources...[/dim white]")
+            console.print("📡 [dim white]Note: This requires SSH access to Gerrit and GitHub APIs[/dim white]")
+
+            try:
+                self._rebuilding_databases = True
+                self.rebuild_repositories_database(force=True)
+                self._rebuilding_databases = False
+                return True
+            except Exception as e:
+                self._rebuilding_databases = False
+                console.print(f"❌ [red]Auto-build failed: {e}[/red]")
+                console.print("🔗 [yellow]Please check SSH keys and network connectivity[/yellow]")
+                return False
+                console.print("🔗 [yellow]Please check SSH keys and network connectivity[/yellow]")
+                return False

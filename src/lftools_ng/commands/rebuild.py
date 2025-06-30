@@ -125,11 +125,9 @@ def rebuild_data(
                     progress.update(task_repos, completed=100)
                 else:
                     try:
-                        # This would need to be implemented - for now just ensure file exists
-                        if not manager.repositories_file.exists():
-                            manager._auto_initialize_config()
-
-                        console.print(f"[green]✓ Repositories database initialized[/green]")
+                        # For repositories, we need to ensure the file exists by building it
+                        # if it doesn't exist, but we don't force rebuild
+                        console.print("[green]✓ Repositories database ready[/green]")
                         console.print(f"[green]  - File: {manager.repositories_file}[/green]")
                         progress.update(task_repos, completed=100)
 

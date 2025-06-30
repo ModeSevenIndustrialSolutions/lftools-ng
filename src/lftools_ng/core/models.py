@@ -242,7 +242,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": ["onap", "ecomp"],
         "domain": "onap.org",
         "primary_scm_platform": "Gerrit",
-        "primary_scm_url": "https://gerrit.onap.org"
+        "primary_scm_url": "https://gerrit.onap.org",
+        "github_mirror_org": "onap"
     },
     "opendaylight": {
         "primary_name": "OpenDaylight",
@@ -251,7 +252,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": ["opendaylight", "odl"],
         "domain": "opendaylight.org",
         "primary_scm_platform": "Gerrit",
-        "primary_scm_url": "https://git.opendaylight.org/gerrit"
+        "primary_scm_url": "https://git.opendaylight.org/gerrit",
+        "github_mirror_org": "opendaylight"
     },
     "o-ran-sc": {
         "primary_name": "O-RAN Software Community",
@@ -260,7 +262,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": ["o-ran", "oran", "o-ran-sc", "o-ran software community"],
         "domain": "o-ran-sc.org",
         "primary_scm_platform": "Gerrit",
-        "primary_scm_url": "https://gerrit.o-ran-sc.org"
+        "primary_scm_url": "https://gerrit.o-ran-sc.org",
+        "github_mirror_org": "o-ran-sc"
     },
     # Additional known projects with aliases
     "agl": {
@@ -279,7 +282,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": ["akraino", "akraino edge stack"],
         "domain": "akraino.org",
         "primary_scm_platform": "Gerrit",
-        "primary_scm_url": "https://gerrit.akraino.org"
+        "primary_scm_url": "https://gerrit.akraino.org",
+        "github_mirror_org": "akraino-edge-stack"
     },
     "edgex": {
         "primary_name": "EdgeX Foundry",
@@ -288,7 +292,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": ["edgex", "edgex foundry"],
         "domain": "edgexfoundry.org",
         "primary_scm_platform": "GitHub",
-        "primary_scm_url": "https://github.com/edgexfoundry"
+        "primary_scm_url": "https://github.com/edgexfoundry",
+        "github_mirror_org": "edgexfoundry"
     },
     FDIO_PROJECT_KEY: {
         "primary_name": "Fast Data Project",
@@ -297,7 +302,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": [FDIO_PROJECT_KEY, "fdio", "fast data"],
         "domain": "fd.io",
         "primary_scm_platform": "Gerrit",
-        "primary_scm_url": "https://gerrit.fd.io"
+        "primary_scm_url": "https://gerrit.fd.io",
+        "github_mirror_org": "FDio"
     },
     "opencord": {
         "primary_name": "OpenCORD",
@@ -306,7 +312,8 @@ PROJECT_ALIASES: Dict[str, Dict[str, Any]] = {
         "name_patterns": ["opencord", "cord", "central office re-architected as a datacenter"],
         "domain": "opencord.org",
         "primary_scm_platform": "Gerrit",
-        "primary_scm_url": "https://gerrit.opencord.org"
+        "primary_scm_url": "https://gerrit.opencord.org",
+        "github_mirror_org": "opencord"
     },
     "hyperledger": {
         "primary_name": "Hyperledger",

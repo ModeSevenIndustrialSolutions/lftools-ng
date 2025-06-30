@@ -7,8 +7,6 @@ import pathlib
 import tempfile
 from unittest.mock import patch
 
-import pytest
-
 from lftools_ng.core.projects import ProjectManager
 
 
@@ -25,9 +23,10 @@ class TestServerInitialization:
             assert not manager.servers_file.exists()
 
             # Mock the prompt to return True (user wants to initialize)
-            with patch.object(manager, '_prompt_for_server_initialization', return_value=True), \
-                 patch.object(manager, '_create_initial_servers_database', return_value=True):
-
+            with (
+                patch.object(manager, "_prompt_for_server_initialization", return_value=True),
+                patch.object(manager, "_create_initial_servers_database", return_value=True),
+            ):
                 result = manager._ensure_servers_database_exists()
                 assert result is True
 
@@ -41,7 +40,7 @@ class TestServerInitialization:
             assert not manager.servers_file.exists()
 
             # Mock the prompt to return False (user declines initialization)
-            with patch.object(manager, '_prompt_for_server_initialization', return_value=False):
+            with patch.object(manager, "_prompt_for_server_initialization", return_value=False):
                 result = manager._ensure_servers_database_exists()
                 assert result is False
 
@@ -66,7 +65,7 @@ class TestServerInitialization:
             manager = ProjectManager(config_dir)
 
             # Create initial database
-            with patch('builtins.print'):  # Suppress console output during test
+            with patch("builtins.print"):  # Suppress console output during test
                 result = manager._create_initial_servers_database()
 
             assert result is True
@@ -85,14 +84,15 @@ class TestServerInitialization:
             manager = ProjectManager(config_dir)
 
             # Mock the initialization to return True
-            with patch.object(manager, '_ensure_servers_database_exists', return_value=True), \
-                 patch.object(manager, 'servers_file') as mock_file:
-
+            with (
+                patch.object(manager, "_ensure_servers_database_exists", return_value=True),
+                patch.object(manager, "servers_file") as mock_file,
+            ):
                 # Mock file exists to return True after initialization
                 mock_file.exists.return_value = True
                 mock_file.open.return_value.__enter__.return_value.read.return_value = "servers: []"
 
-                with patch('yaml.safe_load', return_value={"servers": []}):
+                with patch("yaml.safe_load", return_value={"servers": []}):
                     servers = manager.list_servers()
                     assert isinstance(servers, list)
 
@@ -103,6 +103,6 @@ class TestServerInitialization:
             manager = ProjectManager(config_dir)
 
             # Mock the initialization to return False (user declined)
-            with patch.object(manager, '_ensure_servers_database_exists', return_value=False):
+            with patch.object(manager, "_ensure_servers_database_exists", return_value=False):
                 servers = manager.list_servers()
                 assert servers == []

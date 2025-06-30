@@ -1,3 +1,8 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+SPDX-FileCopyrightText: 2025 The Linux Foundation
+-->
+
 # 1Password Migration Field Type Corrections
 
 ## Summary
@@ -15,6 +20,7 @@ Updated lftools-ng to ensure all future credential migrations from Jenkins to 1P
 - Applies to both LOGIN items and generic items (SECURE_NOTE, etc.)
 
 **Before:**
+
 ```python
 # Only created notesPlain field for description
 if credential.description:
@@ -26,6 +32,7 @@ if credential.description:
 ```
 
 **After:**
+
 ```python
 # Creates both notesPlain and origin/source fields
 if credential.description:
@@ -47,12 +54,14 @@ if credential.metadata and 'migration_origin' in credential.metadata:
 ### 2. Repository Migration Updates
 
 **Files:**
+
 - `src/lftools_ng/commands/repository_migrate.py`
 - `src/lftools_ng/commands/oran_migrate.py`
 
 - Added `migration_origin` metadata to all credentials created during repository migrations
 
 **Before:**
+
 ```python
 metadata={
     "github_url": mapping.github_url,
@@ -63,6 +72,7 @@ metadata={
 ```
 
 **After:**
+
 ```python
 metadata={
     "github_url": mapping.github_url,
@@ -80,6 +90,7 @@ metadata={
 - Updated the `migrate_credentials()` command to add migration metadata for all credentials
 
 **Added:**
+
 ```python
 # Add migration metadata for origin/source field (STRING type for 1Password)
 if cred.metadata is None:
@@ -94,6 +105,7 @@ cred.metadata["migration_origin"] = "Migrated from Jenkins"
 - Updated `_prepare_credential_for_migration()` method to automatically add migration_origin for Jenkins credentials
 
 **Added:**
+
 ```python
 # Add migration origin for 1Password origin/source field (STRING type)
 if credential.source_platform == "jenkins":
@@ -113,6 +125,7 @@ The changes ensure that the "origin/source" field in 1Password items is created 
 ```
 
 **Not** as a concealed/password field:
+
 ```json
 {
   "label": "origin/source",
@@ -130,7 +143,8 @@ To avoid field duplication in migrated credentials, the OnePasswordCredentialPro
 
 This ensures that migrated credentials have clean field structures without duplicate information:
 
-### Migrated Credential Fields:
+### Migrated Credential Fields
+
 ```json
 {
   "username": {"type": "STRING", "value": "deploy"},
@@ -140,7 +154,8 @@ This ensures that migrated credentials have clean field structures without dupli
 }
 ```
 
-### Non-Migrated Credential Fields:
+### Non-Migrated Credential Fields
+
 ```json
 {
   "username": {"type": "STRING", "value": "user"},
@@ -152,13 +167,17 @@ This ensures that migrated credentials have clean field structures without dupli
 ## Impact on Future Migrations
 
 ### For ONAP Project
+
 When migrating ONAP credentials in the future:
+
 1. Use the repository migration command: `repository-migrate repository`
 2. Or use the general migration command: `lftools-ng jenkins migrate`
 3. Both will now automatically create the correct "origin/source" field type
 
 ### For Other Linux Foundation Projects
+
 All future migrations using lftools-ng will now:
+
 - Automatically add "origin/source" field with `STRING` type (visible in 1Password UI)
 - Maintain consistency with the O-RAN-SC corrected credential format
 - No longer require manual field type correction scripts
@@ -166,6 +185,7 @@ All future migrations using lftools-ng will now:
 ## Testing
 
 Created comprehensive test suite (`tests/test_onepassword_migration_field_types.py`) that verifies:
+
 - LOGIN items get correct origin/source field with STRING type
 - Non-LOGIN items (SECURE_NOTE, etc.) get correct origin/source field with STRING type
 - Credentials without migration metadata don't get unnecessary origin/source fields

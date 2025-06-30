@@ -104,6 +104,14 @@ def list_projects(
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
+
+        # Check if projects database exists, prompt for rebuild if needed
+        if not manager.ensure_projects_database_exists():
+            console.print("[yellow]⚠️  Cannot proceed without projects database.[/yellow]")
+            console.print("To manually build the database, run:")
+            console.print("  [cyan]lftools-ng projects rebuild projects --force[/cyan]")
+            raise typer.Exit(1)
+
         projects = manager.list_projects()
 
         # Enhance projects data with computed fields
@@ -257,61 +265,193 @@ projects_app.add_typer(repositories_app, name="repositories")
 
 @repositories_app.command("list")
 def list_repositories(
-    project: Optional[str] = typer.Argument(None, help="Project name to list repositories for"),
+    project: Optional[str] = typer.Argument(None, help="Project name to filter repositories (supports fuzzy matching)"),
     config_dir: Optional[str] = typer.Option(
         None, "--config-dir", "-c", help=CONFIG_DIR_HELP
     ),
     output_format: str = typer.Option(
-        "table", "--format", "-f", help=OUTPUT_FORMAT_HELP
+        "table", "--format", "-f", help="Output format (table, json, json-pretty, json-minimal)"
     ),
     include_archived: bool = typer.Option(
         False, "--include-archived", help="Include archived/read-only repositories"
     ),
+    filter_field: Optional[str] = typer.Option(
+        None, "--filter-field", help="Field to filter on (e.g., 'github_name', 'scm_platform', 'language')"
+    ),
+    filter_value: Optional[str] = typer.Option(
+        None, "--filter-value", help="Value to match in the filter field (supports partial matching)"
+    ),
+    show_github_only: bool = typer.Option(
+        False, "--github-only", help="Show only GitHub-hosted repositories"
+    ),
+    show_gerrit_only: bool = typer.Option(
+        False, "--gerrit-only", help="Show only Gerrit-hosted repositories"
+    ),
+    show_mirrors: bool = typer.Option(
+        True, "--show-mirrors/--hide-mirrors", help="Show/hide mirror information in table"
+    ),
 ) -> None:
-    """List repositories for projects."""
+    """List repositories for projects with advanced filtering and output options.
+
+    Examples:
+
+    # List all repositories in table format
+    lftools-ng projects repositories list
+
+    # List repositories for a specific project (fuzzy matching)
+    lftools-ng projects repositories list onap
+    lftools-ng projects repositories list "o-ran"
+
+    # Output as JSON for processing
+    lftools-ng projects repositories list --format json-pretty
+
+    # Filter by field and value
+    lftools-ng projects repositories list --filter-field language --filter-value python
+    lftools-ng projects repositories list --filter-field scm_platform --filter-value github
+
+    # Show only GitHub repositories
+    lftools-ng projects repositories list --github-only
+
+    # Include archived repositories
+    lftools-ng projects repositories list --include-archived
+    """
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
 
+        # Check if repositories database exists, prompt for rebuild if needed
+        if not manager.ensure_repositories_database_exists():
+            console.print("[yellow]⚠️  Cannot proceed without repositories database.[/yellow]")
+            console.print("To manually build the database, run:")
+            console.print("  [cyan]lftools-ng projects rebuild repositories --force[/cyan]")
+            raise typer.Exit(1)
+
         repositories = manager.list_repositories(project, include_archived)
 
+        # Apply additional filters
+        filtered_repos = repositories["repositories"]
+
+        # Filter by platform
+        if show_github_only:
+            filtered_repos = [r for r in filtered_repos if r.get("scm_platform") == "github"]
+        elif show_gerrit_only:
+            filtered_repos = [r for r in filtered_repos if r.get("scm_platform") == "gerrit"]
+
+        # Filter by custom field
+        if filter_field and filter_value:
+            filter_value_lower = filter_value.lower()
+            filtered_repos = [
+                r for r in filtered_repos
+                if filter_value_lower in str(r.get(filter_field, "")).lower()
+            ]
+
+        # Project fuzzy matching if specified
+        if project:
+            project_lower = project.lower()
+            # Support fuzzy matching on project name
+            filtered_repos = [
+                r for r in filtered_repos
+                if project_lower in r.get("project", "").lower()
+            ]
+
+        # Update counts based on filtered results
+        filtered_total = len(filtered_repos)
+        filtered_active = len([r for r in filtered_repos if not r.get("archived", False)])
+        filtered_archived = filtered_total - filtered_active
+
+        # Prepare output data
+        output_data = {
+            "repositories": filtered_repos,
+            "total": filtered_total,
+            "active": filtered_active,
+            "archived": filtered_archived,
+            "filters_applied": {
+                "project": project,
+                "include_archived": include_archived,
+                "github_only": show_github_only,
+                "gerrit_only": show_gerrit_only,
+                "custom_filter": f"{filter_field}={filter_value}" if filter_field and filter_value else None
+            }
+        }
+
+        # Output in requested format
         if output_format == "json":
             import json
             import sys
-            print(json.dumps(repositories, separators=(',', ':')), file=sys.stdout)
+            print(json.dumps(output_data, separators=(',', ':')), file=sys.stdout)
         elif output_format == "json-pretty":
             import json
             import sys
-            print(json.dumps(repositories, indent=2), file=sys.stdout)
+            print(json.dumps(output_data, indent=2), file=sys.stdout)
+        elif output_format == "json-minimal":
+            import json
+            import sys
+            # Minimal JSON with just essential fields
+            minimal_repos = []
+            for repo in filtered_repos:
+                minimal = {
+                    "name": repo.get("gerrit_path", repo.get("github_name", "")),
+                    "project": repo.get("project", ""),
+                    "platform": repo.get("scm_platform", ""),
+                    "archived": repo.get("archived", False)
+                }
+                if repo.get("github_name"):
+                    minimal["github"] = repo["github_name"]
+                if repo.get("github_url"):
+                    minimal["url"] = repo["github_url"]
+                minimal_repos.append(minimal)
+            print(json.dumps(minimal_repos, separators=(',', ':')), file=sys.stdout)
         else:
-            # Default table format
-            table = Table()
-            table.add_column("Repository", style="cyan")
-            table.add_column("GitHub Mirror", style="green")
-            table.add_column("Status", style="blue")
+            # Enhanced table format
+            table = Table(title=f"Repositories{f' for {project}' if project else ''}")
+            table.add_column("Repository", style="cyan", no_wrap=True)
             table.add_column("Project", style="yellow")
+            table.add_column("Platform", style="blue")
+            table.add_column("Active", style="white")
 
-            active_count = 0
-            archived_count = 0
+            if show_mirrors:
+                table.add_column("GitHub Mirror", style="green")
+                table.add_column("GitHub URL", style="dim blue", max_width=40)
 
-            for repo in repositories["repositories"]:
-                status = "Archived" if repo.get("archived", False) else "Active"
-                if repo.get("archived", False):
-                    archived_count += 1
-                else:
-                    active_count += 1
+            # Add language and stars columns for GitHub repos
+            has_github_data = any(r.get("github_language") for r in filtered_repos)
+            if has_github_data:
+                table.add_column("Language", style="magenta")
+                table.add_column("Stars", style="dim green", justify="right")
 
-                table.add_row(
-                    repo.get("gerrit_path", repo.get("github_name", "")),
-                    repo.get("github_name", ""),
-                    status,
-                    repo.get("project", "")
-                )
+            for repo in filtered_repos:
+                status = "�" if repo.get("archived", False) else "✅"
+                platform = repo.get("scm_platform", "unknown").title()
+
+                # Primary repository name
+                repo_name = repo.get("gerrit_path", repo.get("github_name", ""))
+                project_name = repo.get("project", "")
+
+                row = [repo_name, project_name, platform, status]
+
+                if show_mirrors:
+                    github_name = repo.get("github_name", "")
+                    github_url = repo.get("github_url", "")
+                    row.extend([github_name, github_url])
+
+                if has_github_data:
+                    language = repo.get("github_language", repo.get("language", ""))
+                    stars = str(repo.get("github_stars", repo.get("stars", "")))
+                    row.extend([language, stars])
+
+                table.add_row(*row)
 
             console.print(table)
-            console.print(f"\nTotal repositories: {len(repositories['repositories'])}")
-            console.print(f"Active repositories: {active_count}")
-            console.print(f"Archived repositories: {archived_count}")
+
+            # Summary with colorized counts
+            console.print(f"\n[bold]Summary:[/bold]")
+            console.print(f"📊 Total repositories: [cyan]{filtered_total}[/cyan]")
+            console.print(f"✅ Active repositories: [green]{filtered_active}[/green]")
+            if filtered_archived > 0:
+                console.print(f"📦 Archived repositories: [yellow]{filtered_archived}[/yellow]")
+
+            if project or filter_field or show_github_only or show_gerrit_only:
+                console.print(f"\n[dim]Filters applied - showing subset of total repositories[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -477,6 +617,38 @@ def rebuild_servers_database(
         raise typer.Exit(1)
 
 
+@rebuild_app.command("repositories")
+def rebuild_repositories_database(
+    config_dir: Optional[str] = typer.Option(
+        None, "--config-dir", "-c", help=CONFIG_DIR_HELP
+    ),
+    source: Optional[str] = typer.Option(
+        None, "--source", "-s", help="Source URL for repositories configuration"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force rebuild even if database exists"
+    ),
+) -> None:
+    """Rebuild the repositories database from source configuration."""
+    try:
+        config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
+        manager = ProjectManager(config_path)
+
+        result = manager.rebuild_repositories_database(source_url=source, force=force)
+
+        console.print(f"[green]✓[/green] Successfully rebuilt repositories database")
+        console.print(f"  Repositories: {result['repositories_count']}")
+        console.print(f"  Active: {result['active_count']}")
+        console.print(f"  Archived: {result['archived_count']}")
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @servers_app.command("connectivity")
 def test_connectivity(
     config_dir: Optional[str] = typer.Option(
@@ -632,48 +804,16 @@ def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectMana
     Returns:
         Primary SCM platform: "Gerrit", "GitHub", "GitLab", "Git", or "Unknown"
     """
-    project_name = project.get("name", "")
+    # First check if project data includes scm_platform or primary_scm
+    scm_platform = project.get("scm_platform") or project.get("primary_scm")
+    if scm_platform:
+        # Capitalize for display consistency
+        return scm_platform.capitalize()
 
-    # First check if project data already includes primary_scm_platform
+    # Check if project data includes primary_scm_platform
     primary_scm_platform = project.get("primary_scm_platform")
     if primary_scm_platform:
         return primary_scm_platform
-
-    # Check if project has an active Gerrit server - this is the definitive indicator
-    try:
-        servers = manager.list_servers()
-
-        # Look for Gerrit servers associated with this project
-        for server in servers:
-            if server.get("type") == "gerrit":
-                server_projects = server.get("projects", [])
-                if project_name in server_projects:
-                    return "Gerrit"
-
-    except Exception:
-        # If we can't load servers, fall back to other checks
-        pass
-
-    # Check repository data for Gerrit indicators
-    try:
-        repositories_data = manager.list_repositories(project_name)
-        repositories = repositories_data.get("repositories", [])
-
-        for repo in repositories:
-            # Check if repository's project matches our project name
-            if repo.get("project", "").lower() == project_name.lower():
-                # Check if repository description mentions gerrit
-                description = repo.get("description", "")
-                if "gerrit" in description.lower():
-                    return "Gerrit"
-
-                # Check if repository has gerrit_path
-                if repo.get("gerrit_path"):
-                    return "Gerrit"
-
-    except Exception:
-        # If we can't load repositories, continue with fallbacks
-        pass
 
     # Fallback: Check if project has explicit gerrit_url configuration
     gerrit_url = project.get("gerrit_url")
@@ -683,17 +823,12 @@ def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectMana
     # Check for GitHub organization
     github_org = project.get("github_mirror_org")
     if github_org:
-        # For GitHub orgs, we need to determine if it's primary or just a mirror
-        # Check if the project explicitly has a gerrit_url - if so, GitHub is just a mirror
-        if gerrit_url:
-            return "Gerrit"  # Gerrit is primary, GitHub is mirror
-        else:
-            return "GitHub"  # GitHub is primary
-
-    # Last resort: check PROJECT_ALIASES for fall-through projects
-    from lftools_ng.core.models import PROJECT_ALIASES
+        return "GitHub"
 
     # Try to find the project in aliases by name matching
+    from lftools_ng.core.models import PROJECT_ALIASES
+    
+    project_name = project.get("name", "")
     project_lower = project_name.lower()
     for alias_key, alias_data in PROJECT_ALIASES.items():
         if (project_lower == alias_data.get("primary_name", "").lower() or
@@ -702,6 +837,9 @@ def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectMana
             scm_platform = alias_data.get("primary_scm_platform", "Unknown")
             if scm_platform != "Unknown":
                 return scm_platform
+
+    # Final fallback
+    return "Unknown"
 
     return "Unknown"
 

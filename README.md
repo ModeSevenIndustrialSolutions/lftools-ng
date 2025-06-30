@@ -64,6 +64,15 @@ See [docs/filtering.md](docs/filtering.md) for complete filtering documentation.
 - **Database Rebuilding**: Dynamically update project and server databases
 - **Short Aliases**: Support for project short names and aliases
 
+### 🚀 Repository Discovery ⭐ **NEW FEATURE**
+
+- **SSH-based Gerrit Discovery**: Enumerate repositories from Gerrit instances using SSH (no web scraping)
+- **GitHub API Integration**: Discover repositories from GitHub organizations
+- **Bidirectional Mapping**: Map between Gerrit repository paths and GitHub repository names
+- **Cross-platform Support**: Handle repositories that exist in both Gerrit and GitHub
+- **SSH Configuration**: Respects user's SSH config and authentication settings
+- **Large Project Support**: Efficiently handles large projects like ONAP and O-RAN-SC
+
 ## Installation
 
 ### From PyPI (when available)
@@ -226,6 +235,58 @@ lftools-ng projects repositories archived
 # List archived repositories for a specific project
 lftools-ng projects repositories archived ONAP
 ```
+
+#### Rebuild Repository Database
+
+```bash
+# Rebuild repositories database (SSH-based discovery)
+lftools-ng projects rebuild repositories --force
+
+# Rebuild for specific project only
+lftools-ng projects rebuild repositories ONAP --force
+
+# Test SSH connectivity first
+lftools-ng projects repositories test-ssh ONAP
+```
+
+### SSH-Based Repository Discovery
+
+lftools-ng uses SSH to connect to Gerrit instances for repository discovery,
+providing more reliable and efficient access than web scraping methods.
+
+#### Prerequisites
+
+1. **SSH Access**: Ensure you have SSH access to the relevant Gerrit instances
+2. **SSH Keys**: Your SSH keys should be set up and available via SSH agent
+3. **SSH Config**: Configure usernames in `~/.ssh/config` for Gerrit hosts
+
+#### Example SSH Configuration
+
+```bash
+# ~/.ssh/config
+Host gerrit.onap.org
+    User mygerrituser
+    IdentityFile ~/.ssh/id_rsa
+
+Host gerrit.o-ran-sc.org
+    User mygerrituser
+    IdentityFile ~/.ssh/id_rsa
+```
+
+#### Repository Discovery Process
+
+1. **SSH Connection**: Connects to Gerrit via SSH using your configured credentials
+2. **Project Enumeration**: Runs `gerrit ls-projects --format json --all` command
+3. **GitHub Mapping**: Maps Gerrit repository paths to GitHub repository names
+4. **Cross-Reference**: Links repositories that exist in both Gerrit and GitHub
+5. **Database Update**: Stores repository information in local database
+
+#### Supported Gerrit Features
+
+- **All Projects**: Discovers all accessible projects, including archived ones
+- **Project Metadata**: Captures descriptions, states, and access permissions
+- **Nested Paths**: Handles complex repository hierarchies (e.g., `aai/aai-common`)
+- **State Detection**: Identifies active vs. read-only (archived) repositories
 
 ### General Commands
 

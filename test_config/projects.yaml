@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+---
+# Test Projects Database
+# This file contains dummy project data for lftools-ng testing
+
+projects:
+  - name: "TestProject1"
+    display_name: "Test Project One"
+    description: "A test project for unit testing"
+    primary_scm: "gerrit"
+    gerrit_host: "gerrit.testproject1.org"
+    gerrit_server: "https://gerrit.testproject1.org/"
+    github_mirror_org: "testproject1-mirror"
+    github_server: "https://github.com/testproject1-mirror/"
+    jenkins_server: "https://jenkins.testproject1.org/"
+    nexus_server: "https://nexus.testproject1.org/"
+    sonar_server: "https://sonar.testproject1.org/"
+    created: "2025-01-01T10:00:00Z"
+    updated: "2025-01-15T10:00:00Z"
+
+  - name: "TestProject2"
+    display_name: "Test Project Two"
+    description: "Another test project for unit testing"
+    primary_scm: "github"
+    gerrit_host: "gerrit.testproject2.org"
+    gerrit_server: "https://gerrit.testproject2.org/"
+    github_mirror_org: "testproject2"
+    github_server: "https://github.com/testproject2/"
+    jenkins_server: "https://jenkins.testproject2.org/"
+    nexus_server: "https://nexus.testproject2.org/"
+    sonar_server: "https://sonar.testproject2.org/"
+    created: "2025-01-02T10:00:00Z"
+    updated: "2025-01-16T10:00:00Z"
+
+  - name: "TestProject3"
+    display_name: "Test Project Three"
+    description: "A third test project for unit testing"
+    primary_scm: "gerrit"
+    gerrit_host: "gerrit.testproject3.org"
+    gerrit_server: "https://gerrit.testproject3.org/"
+    github_mirror_org: "testproject3-mirror"
+    github_server: "https://github.com/testproject3-mirror/"
+    jenkins_server: "https://jenkins.testproject3.org/"
+    nexus_server: "https://nexus.testproject3.org/"
+    sonar_server: "https://sonar.testproject3.org/"
+    created: "2025-01-03T10:00:00Z"
+    updated: "2025-01-17T10:00:00Z"
+
+  - name: "ArchivedProject"
+    display_name: "Archived Test Project"
+    description: "An archived test project for testing archived status"
+    primary_scm: "gerrit"
+    gerrit_host: "gerrit.archivedproject.org"
+    gerrit_server: "https://gerrit.archivedproject.org/"
+    github_mirror_org: "archivedproject-mirror"
+    github_server: "https://github.com/archivedproject-mirror/"
+    jenkins_server: "https://jenkins.archivedproject.org/"
+    nexus_server: "https://nexus.archivedproject.org/"
+    sonar_server: "https://sonar.archivedproject.org/"
+    archived: true
+    created: "2024-01-01T10:00:00Z"
+    updated: "2024-12-31T10:00:00Z"

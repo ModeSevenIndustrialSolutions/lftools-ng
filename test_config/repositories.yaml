@@ -2,62 +2,78 @@
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
 ---
-# Sample Repositories Database
-# This file contains repository data for lftools-ng
+# Test Repositories Database
+# This file contains dummy repository data for lftools-ng testing
 
 repositories:
-  - project: "ONAP"
-    gerrit_path: "aai/aai-common"
-    github_name: "aai-aai-common"
-    description: "ONAP AAI Common modules"
+  - project: "TestProject1"
+    gerrit_path: "testproject1/core"
+    github_name: "testproject1-core"
+    description: "Core module for TestProject1"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2025-01-01T10:00:00Z"
+    updated: "2025-01-15T10:00:00Z"
 
-  - project: "ONAP"
-    gerrit_path: "aai/babel"
-    github_name: "aai-babel"
-    description: "ONAP AAI Babel artifact translator"
+  - project: "TestProject1"
+    gerrit_path: "testproject1/utils"
+    github_name: "testproject1-utils"
+    description: "Utilities for TestProject1"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2025-01-01T11:00:00Z"
+    updated: "2025-01-15T11:00:00Z"
 
-  - project: "ONAP"
-    gerrit_path: "policy/engine"
-    github_name: "policy-engine"
-    description: "ONAP Policy Engine"
+  - project: "TestProject1"
+    gerrit_path: "testproject1/legacy"
+    github_name: "testproject1-legacy"
+    description: "Legacy code for TestProject1"
     archived: true
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2024-01-01T10:00:00Z"
+    updated: "2024-12-31T10:00:00Z"
 
-  - project: "OpenDaylight"
-    gerrit_path: "controller"
-    github_name: "controller"
-    description: "OpenDaylight Controller"
+  - project: "TestProject2"
+    gerrit_path: "testproject2/main"
+    github_name: "testproject2-main"
+    description: "Main repository for TestProject2"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2025-01-02T10:00:00Z"
+    updated: "2025-01-16T10:00:00Z"
 
-  - project: "OpenDaylight"
-    gerrit_path: "odlparent"
-    github_name: "odlparent"
-    description: "OpenDaylight Parent"
+  - project: "TestProject2"
+    gerrit_path: "testproject2/api"
+    github_name: "testproject2-api"
+    description: "API for TestProject2"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2025-01-02T11:00:00Z"
+    updated: "2025-01-16T11:00:00Z"
 
-  - project: "Anuket"
-    gerrit_path: "releng"
-    github_name: "releng"
-    description: "Anuket Release Engineering"
+  - project: "TestProject3"
+    gerrit_path: "testproject3/frontend"
+    github_name: "testproject3-frontend"
+    description: "Frontend for TestProject3"
     archived: false
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2025-01-03T10:00:00Z"
+    updated: "2025-01-17T10:00:00Z"
 
-  - project: "Anuket"
-    gerrit_path: "vswitchperf"
-    github_name: "vswitchperf"
-    description: "Anuket VSwitch Performance Testing"
+  - project: "TestProject3"
+    gerrit_path: "testproject3/backend"
+    github_name: "testproject3-backend"
+    description: "Backend for TestProject3"
+    archived: false
+    created: "2025-01-03T11:00:00Z"
+    updated: "2025-01-17T11:00:00Z"
+
+  - project: "ArchivedProject"
+    gerrit_path: "archivedproject/main"
+    github_name: "archivedproject-main"
+    description: "Main repository for archived project"
     archived: true
-    created: "2025-06-20T10:00:00"
-    updated: "2025-06-20T10:00:00"
+    created: "2024-01-01T10:00:00Z"
+    updated: "2024-12-31T10:00:00Z"
+
+  - project: "ArchivedProject"
+    gerrit_path: "archivedproject/docs"
+    github_name: "archivedproject-docs"
+    description: "Documentation for archived project"
+    archived: true
+    created: "2024-01-01T11:00:00Z"
+    updated: "2024-12-31T11:00:00Z"
