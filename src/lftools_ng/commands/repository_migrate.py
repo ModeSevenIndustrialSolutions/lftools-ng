@@ -27,6 +27,7 @@ from lftools_ng.core.credential_manager import (
 )
 from lftools_ng.core.jenkins_provider import JenkinsCredentialProvider
 from lftools_ng.core.platform_providers import OnePasswordCredentialProvider
+from lftools_ng.core.jenkins_config import get_jenkins_credentials
 
 
 @dataclass
@@ -47,21 +48,26 @@ class ProjectAwareMigrationManager:
         self.console = Console()
         self.logger = logging.getLogger(__name__)
 
-        # Use unified data loading through ProjectManager
-        from pathlib import Path
-        config_dir = Path.home() / ".config" / "lftools-ng"
-        from lftools_ng.core.projects import ProjectManager
-        self.project_manager = ProjectManager(config_dir)
+        # Load projects data directly from resources
         self.projects_data = self._load_projects_data()
 
     def _load_projects_data(self) -> Dict[str, Any]:
-        """Load projects data using unified data loading mechanism."""
+        """Load projects data from resources."""
         try:
-            projects_list = self.project_manager.get_projects_data()
-            return {"projects": projects_list}
+            # Get the path to the resources directory
+            from pathlib import Path
+            import lftools_ng
+            resources_dir = Path(lftools_ng.__file__).parent.parent.parent / "resources"
+            projects_file = resources_dir / "projects.yaml"
+
+            if projects_file.exists():
+                import yaml
+                with open(projects_file) as f:
+                    return yaml.safe_load(f) or {}
         except Exception as e:
-            self.logger.warning(f"Could not load projects data via ProjectManager: {e}")
-            return {}
+            self.logger.warning(f"Could not load projects data: {e}")
+
+        return {}
 
     def find_project_by_name(self, project_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -125,10 +131,6 @@ class ProjectAwareMigrationManager:
         Returns:
             Repository name if pattern matches, None otherwise
         """
-        if pattern is None:
-            # Default pattern matches: "repository-name repository deployment"
-            pattern = r'^(.+?)\s+\w+\s+deployment$'
-
         if pattern is None:
             # Default pattern matches: "repository-name repository deployment"
             pattern = r'^(.+?)\s+\w+\s+deployment$'
@@ -225,7 +227,8 @@ class ProjectAwareMigrationManager:
             repository_name = self.extract_repository_name_from_credential_id(credential.name, pattern)
 
             if not repository_name:
-                self.logger.warning(
+                # Use debug level instead of warning to reduce console noise
+                self.logger.debug(
                     f"Could not extract repository name from credential: {credential.name}"
                 )
                 continue
@@ -270,7 +273,7 @@ class ProjectAwareMigrationManager:
                 "project": mapping.project,
                 "migration_source": mapping.jenkins_credential_id,
                 "migration_type": "repository_deployment",
-                "migration_origin": "Migrated from Jenkins"  # This will create the origin/source field as STRING type
+                "migration_origin": "Migrated from Jenkins"  # This creates the origin/source field
             }
         )
 
@@ -376,219 +379,261 @@ class ProjectAwareMigrationManager:
             return False
 
 
-def main():
-    """Main migration command."""
-    app = typer.Typer(name="repository-migrate", help="Generic Repository Credential Migration Tool for Linux Foundation Projects")
+# Create the app at module level
+app = typer.Typer(name="repository-migrate", help="Generic Repository Credential Migration Tool for Linux Foundation Projects")
 
-    @app.command("repository")
-    def migrate_repository_credentials(
-        # Jenkins connection options
-        jenkins_server: str = typer.Option(
-            ...,
-            "--jenkins-server", "-s",
-            help="Jenkins server URL",
-            envvar="JENKINS_SERVER"
-        ),
-        jenkins_user: str = typer.Option(
-            ...,
-            "--jenkins-user", "-u",
-            help="Jenkins username",
-            envvar="JENKINS_USER"
-        ),
-        jenkins_password: str = typer.Option(
-            ...,
-            "--jenkins-password", "-p",
-            help="Jenkins password or API token",
-            envvar="JENKINS_PASSWORD"
-        ),
 
-        # 1Password options
-        onepassword_vault: str = typer.Option(
-            "CI/CD Credentials",
-            "--vault", "-v",
-            help="1Password vault name"
-        ),
-        onepassword_account: Optional[str] = typer.Option(
-            None,
-            "--account", "-a",
-            help="1Password account (if multiple accounts)"
-        ),
+@app.command("repository")
+def migrate_repository_credentials(
+    # Jenkins connection options
+    jenkins_server: Optional[str] = typer.Option(
+        None,
+        "--jenkins-server", "-s",
+        help="Jenkins server URL (or use jenkins_jobs.ini)",
+        envvar="JENKINS_SERVER"
+    ),
+    jenkins_user: Optional[str] = typer.Option(
+        None,
+        "--jenkins-user", "-u",
+        help="Jenkins username (or use jenkins_jobs.ini)",
+        envvar="JENKINS_USER"
+    ),
+    jenkins_password: Optional[str] = typer.Option(
+        None,
+        "--jenkins-password", "-p",
+        help="Jenkins password or API token (or use jenkins_jobs.ini)",
+        envvar="JENKINS_PASSWORD"
+    ),
+    jenkins_config: Optional[str] = typer.Option(
+        None,
+        "--jenkins-config", "-c",
+        help="Path to jenkins_jobs.ini file (default: search standard locations)"
+    ),
 
-        # Migration options
-        dry_run: bool = typer.Option(
-            False,
-            "--dry-run",
-            help="Show what would be migrated without making changes"
-        ),
-        single_credential: Optional[str] = typer.Option(
-            None,
-            "--single", "-1",
-            help="Migrate only a single credential by repository name (e.g., 'aal-virt')"
-        ),
-        project: Optional[str] = typer.Option(
-            None,
-            "--project",
-            help="Project name for repository URL generation (required for proper GitHub URLs)"
-        ),
-        filter_pattern: str = typer.Option(
-            "deployment",
-            "--filter-pattern", "-f",
-            help="Pattern to match in credential names (e.g., 'deployment', 'nexus deployment')"
-        ),
-        extraction_pattern: Optional[str] = typer.Option(
-            None,
-            "--extraction-pattern", "-e",
-            help="Regex pattern for extracting repository names from credential IDs"
-        ),
-        skip_validation: bool = typer.Option(
-            False,
-            "--skip-validation",
-            help="Skip 1Password setup validation"
+    # 1Password options
+    onepassword_vault: str = typer.Option(
+        "CI/CD Credentials",
+        "--vault", "-v",
+        help="1Password vault name"
+    ),
+    onepassword_account: Optional[str] = typer.Option(
+        None,
+        "--account", "-a",
+        help="1Password account (if multiple accounts)"
+    ),
+
+    # Migration options
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be migrated without making changes"
+    ),
+    single_credential: Optional[str] = typer.Option(
+        None,
+        "--single", "-1",
+        help="Migrate only a single credential by repository name (e.g., 'aal-virt')"
+    ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help="Project name for repository URL generation (required for proper GitHub URLs)"
+    ),
+    filter_pattern: str = typer.Option(
+        "deployment",
+        "--filter-pattern", "-f",
+        help="Pattern to match in credential names (e.g., 'deployment', 'nexus deployment')"
+    ),
+    extraction_pattern: Optional[str] = typer.Option(
+        None,
+        "--extraction-pattern", "-e",
+        help="Regex pattern for extracting repository names from credential IDs"
+    ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip 1Password setup validation"
+    )
+):
+    """
+    Migrate repository deployment credentials from Jenkins to 1Password.
+
+    This command:
+    1. Fetches all credentials from Jenkins
+    2. Filters for repository credentials matching the specified pattern
+    3. Maps repository names to GitHub URLs
+    4. Creates properly formatted credentials in 1Password
+
+    Examples:
+
+    # Dry run to see what would be migrated (O-RAN-SC Nexus credentials)
+    lftools-ng migrate repository --jenkins-server https://jenkins.o-ran-sc.org --jenkins-user admin --jenkins-password token --project "O-RAN-SC" --filter-pattern "nexus deployment" --dry-run
+
+    # Migrate all repository credentials with default pattern
+    lftools-ng migrate repository --jenkins-server https://jenkins.example.org --jenkins-user admin --jenkins-password token --project "MyProject"
+
+    # Migrate ONAP credentials with custom pattern
+    lftools-ng migrate repository --jenkins-server https://jenkins.onap.org --jenkins-user admin --jenkins-password token --project "ONAP" --filter-pattern "artifact deployment"
+
+    # Migrate a single credential
+    lftools-ng migrate repository --jenkins-server https://jenkins.o-ran-sc.org --jenkins-user admin --jenkins-password token --project "O-RAN-SC" --single aal-virt
+    """
+    console = Console()
+
+    console.print("[bold blue]Repository Credentials Migration Tool[/bold blue]\n")
+
+    # Initialize migration manager
+    migration_manager = ProjectAwareMigrationManager()
+
+    # Resolve Jenkins credentials
+    console.print("[cyan]Resolving Jenkins credentials...[/cyan]")
+
+    # Try to get credentials from jenkins_jobs.ini if not all provided via CLI
+    if not all([jenkins_server, jenkins_user, jenkins_password]):
+        from pathlib import Path
+        config_path = Path(jenkins_config) if jenkins_config else None
+
+        jenkins_config_obj = get_jenkins_credentials(
+            server_url=jenkins_server,
+            config_path=config_path
         )
-    ):
-        """
-        Migrate repository deployment credentials from Jenkins to 1Password.
 
-        This command:
-        1. Fetches all credentials from Jenkins
-        2. Filters for repository credentials matching the specified pattern
-        3. Maps repository names to GitHub URLs
-        4. Creates properly formatted credentials in 1Password
-
-        Examples:
-
-        # Dry run to see what would be migrated (O-RAN-SC Nexus credentials)
-        repository-migrate repository --jenkins-server https://jenkins.o-ran-sc.org --jenkins-user admin --jenkins-password token --project "O-RAN-SC" --filter-pattern "nexus deployment" --dry-run
-
-        # Migrate all repository credentials with default pattern
-        repository-migrate repository --jenkins-server https://jenkins.example.org --jenkins-user admin --jenkins-password token --project "MyProject"
-
-        # Migrate ONAP credentials with custom pattern
-        repository-migrate repository --jenkins-server https://jenkins.onap.org --jenkins-user admin --jenkins-password token --project "ONAP" --filter-pattern "artifact deployment"
-
-        # Migrate a single credential
-        repository-migrate repository --jenkins-server https://jenkins.o-ran-sc.org --jenkins-user admin --jenkins-password token --project "O-RAN-SC" --single aal-virt
-        """
-        console = Console()
-
-        console.print("[bold blue]Repository Credentials Migration Tool[/bold blue]\n")
-
-        # Initialize migration manager
-        migration_manager = ProjectAwareMigrationManager()
-
-        # Validate 1Password setup unless skipped
-        if not skip_validation:
-            console.print("[cyan]Validating 1Password setup...[/cyan]")
-            if not migration_manager.validate_onepassword_setup(onepassword_vault, onepassword_account):
-                raise typer.Exit(1)
-            console.print()
-
-        # Initialize Jenkins provider
-        console.print("[cyan]Connecting to Jenkins...[/cyan]")
-        jenkins_provider = JenkinsCredentialProvider(
-            server=jenkins_server,
-            username=jenkins_user,
-            password=jenkins_password,
-            enable_classification=True
-        )
-
-        # Get all Jenkins credentials
-        try:
-            all_credentials = jenkins_provider.list_credentials()
-            console.print(f"[green]✅ Connected to Jenkins. Found {len(all_credentials)} total credentials[/green]\n")
-        except Exception as e:
-            console.print(f"[red]❌ Failed to connect to Jenkins: {e}[/red]")
+        if jenkins_config_obj:
+            console.print(f"[green]✅ Found Jenkins credentials in config for: {jenkins_config_obj.url}[/green]")
+            jenkins_server = jenkins_config_obj.url
+            jenkins_user = jenkins_config_obj.user
+            jenkins_password = jenkins_config_obj.password
+        else:
+            if jenkins_config:
+                console.print(f"[red]❌ Jenkins config file not found or invalid: {jenkins_config}[/red]")
+            else:
+                console.print("[red]❌ No jenkins_jobs.ini found in standard locations[/red]")
+                console.print("[yellow]Please provide Jenkins credentials via CLI options or create a jenkins_jobs.ini file[/yellow]")
             raise typer.Exit(1)
 
-        # Filter for repository credentials using the specified pattern
-        repository_credentials = migration_manager.filter_repository_credentials(all_credentials, filter_pattern)
-        console.print(f"[green]Found {len(repository_credentials)} repository credentials matching '{filter_pattern}'[/green]\n")
+    # Validate we have all required credentials
+    if not all([jenkins_server, jenkins_user, jenkins_password]):
+        console.print("[red]❌ Missing required Jenkins credentials[/red]")
+        console.print("[yellow]Provide --jenkins-server, --jenkins-user, and --jenkins-password, or use a jenkins_jobs.ini file[/yellow]")
+        raise typer.Exit(1)
 
-        if not repository_credentials:
-            console.print(f"[yellow]No repository credentials found matching pattern '{filter_pattern}'. Exiting.[/yellow]")
-            raise typer.Exit(0)
+    console.print(f"[green]Using Jenkins server: {jenkins_server}[/green]")
+    console.print()
 
-        # Create credential mappings
-        mappings = migration_manager.create_repository_credential_mappings(
-            repository_credentials,
-            project,
-            extraction_pattern
-        )
-
-        # Filter for single credential if specified
-        if single_credential:
-            mappings = [m for m in mappings if m.repository_name == single_credential]
-            if not mappings:
-                console.print(f"[red]No credential found for repository '{single_credential}'[/red]")
-                raise typer.Exit(1)
-            console.print(f"[yellow]Migrating single credential: {single_credential}[/yellow]\n")
-
-        # Display migration plan
-        migration_manager.display_migration_plan(mappings)
+    # Validate 1Password setup unless skipped
+    if not skip_validation:
+        console.print("[cyan]Validating 1Password setup...[/cyan]")
+        if not migration_manager.validate_onepassword_setup(onepassword_vault, onepassword_account):
+            raise typer.Exit(1)
         console.print()
 
-        # Confirm migration unless dry run
-        if not dry_run:
-            if not Confirm.ask(f"Proceed with migrating {len(mappings)} credentials to 1Password?"):
-                console.print("[yellow]Migration cancelled[/yellow]")
-                raise typer.Exit(0)
-            console.print()
+    # Initialize Jenkins provider
+    console.print("[cyan]Connecting to Jenkins...[/cyan]")
+    jenkins_provider = JenkinsCredentialProvider(
+        server=jenkins_server,
+        username=jenkins_user,
+        password=jenkins_password,
+        enable_classification=True
+    )
 
-        # Initialize 1Password provider
-        onepassword_provider = OnePasswordCredentialProvider(
-            vault=onepassword_vault,
-            account=onepassword_account
-        )
+    # Get all Jenkins credentials
+    try:
+        all_credentials = jenkins_provider.list_credentials()
+        console.print(f"[green]✅ Connected to Jenkins. Found {len(all_credentials)} total credentials[/green]\n")
+    except Exception as e:
+        console.print(f"[red]❌ Failed to connect to Jenkins: {e}[/red]")
+        raise typer.Exit(1)
 
-        # Perform migrations
-        console.print("[cyan]Starting migration...[/cyan]")
-        results = []
+    # Filter for repository credentials using the specified pattern
+    repository_credentials = migration_manager.filter_repository_credentials(all_credentials, filter_pattern)
+    console.print(f"[green]Found {len(repository_credentials)} repository credentials matching '{filter_pattern}'[/green]\n")
 
-        for i, mapping in enumerate(mappings, 1):
-            console.print(f"[cyan]Migrating {i}/{len(mappings)}: {mapping.repository_name}[/cyan]")
+    if not repository_credentials:
+        console.print(f"[yellow]No repository credentials found matching pattern '{filter_pattern}'. Exiting.[/yellow]")
+        raise typer.Exit(0)
 
-            result = migration_manager.migrate_single_credential(
-                mapping,
-                onepassword_provider,
-                dry_run=dry_run
-            )
-            results.append(result)
+    # Create credential mappings
+    mappings = migration_manager.create_repository_credential_mappings(
+        repository_credentials,
+        project,
+        extraction_pattern
+    )
 
-            # Display result
-            if result.success:
-                if result.action == "would_create":
-                    console.print(f"  [green]✅ Would create credential for {mapping.repository_name}[/green]")
-                elif result.action == "created":
-                    console.print(f"  [green]✅ Created credential for {mapping.repository_name}[/green]")
-                elif result.action == "skipped":
-                    console.print(f"  [yellow]⏭️  Skipped {mapping.repository_name} (already exists)[/yellow]")
-            else:
-                console.print(f"  [red]❌ Failed to migrate {mapping.repository_name}: {result.error or result.message}[/red]")
-
-        # Summary
-        console.print("\n[bold]Migration Summary:[/bold]")
-
-        successful = len([r for r in results if r.success])
-        failed = len([r for r in results if not r.success])
-        skipped = len([r for r in results if r.action == "skipped"])
-
-        if dry_run:
-            console.print(f"[green]✅ {successful} credentials would be migrated[/green]")
-        else:
-            console.print(f"[green]✅ {successful} credentials migrated successfully[/green]")
-            if skipped > 0:
-                console.print(f"[yellow]⏭️  {skipped} credentials skipped (already exist)[/yellow]")
-            if failed > 0:
-                console.print(f"[red]❌ {failed} credentials failed to migrate[/red]")
-
-        # Exit with appropriate code
-        if failed > 0 and not dry_run:
+    # Filter for single credential if specified
+    if single_credential:
+        mappings = [m for m in mappings if m.repository_name == single_credential]
+        if not mappings:
+            console.print(f"[red]No credential found for repository '{single_credential}'[/red]")
             raise typer.Exit(1)
-        else:
-            raise typer.Exit(0)
+        console.print(f"[yellow]Migrating single credential: {single_credential}[/yellow]\n")
 
-    if __name__ == "__main__":
-        app()
+    # Display migration plan
+    migration_manager.display_migration_plan(mappings)
+    console.print()
+
+    # Confirm migration unless dry run
+    if not dry_run:
+        if not Confirm.ask(f"Proceed with migrating {len(mappings)} credentials to 1Password?"):
+            console.print("[yellow]Migration cancelled[/yellow]")
+            raise typer.Exit(0)
+        console.print()
+
+    # Initialize 1Password provider
+    onepassword_provider = OnePasswordCredentialProvider(
+        vault=onepassword_vault,
+        account=onepassword_account
+    )
+
+    # Perform migrations
+    console.print("[cyan]Starting migration...[/cyan]")
+    results = []
+
+    for i, mapping in enumerate(mappings, 1):
+        console.print(f"[cyan]Migrating {i}/{len(mappings)}: {mapping.repository_name}[/cyan]")
+
+        result = migration_manager.migrate_single_credential(
+            mapping,
+            onepassword_provider,
+            dry_run=dry_run
+        )
+        results.append(result)
+
+        # Display result
+        if result.success:
+            if result.action == "would_create":
+                console.print(f"  [green]✅ Would create credential for {mapping.repository_name}[/green]")
+            elif result.action == "created":
+                console.print(f"  [green]✅ Created credential for {mapping.repository_name}[/green]")
+            elif result.action == "skipped":
+                console.print(f"  [yellow]⏭️  Skipped {mapping.repository_name} (already exists)[/yellow]")
+        else:
+            console.print(f"  [red]❌ Failed to migrate {mapping.repository_name}: {result.error or result.message}[/red]")
+
+    # Summary
+    console.print("\n[bold]Migration Summary:[/bold]")
+
+    successful = len([r for r in results if r.success])
+    failed = len([r for r in results if not r.success])
+    skipped = len([r for r in results if r.action == "skipped"])
+
+    if dry_run:
+        console.print(f"[green]✅ {successful} credentials would be migrated[/green]")
+    else:
+        console.print(f"[green]✅ {successful} credentials migrated successfully[/green]")
+        if skipped > 0:
+            console.print(f"[yellow]⏭️  {skipped} credentials skipped (already exist)[/yellow]")
+        if failed > 0:
+            console.print(f"[red]❌ {failed} credentials failed to migrate[/red]")
+
+    # Exit with appropriate code
+    if failed > 0 and not dry_run:
+        raise typer.Exit(1)
+    else:
+        raise typer.Exit(0)
+
+
+def main():
+    """Main migration command."""
+    app()
 
 
 if __name__ == "__main__":

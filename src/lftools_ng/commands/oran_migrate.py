@@ -50,21 +50,26 @@ class ProjectAwareMigrationManager:
         self.console = Console()
         self.logger = logging.getLogger(__name__)
 
-        # Use unified data loading through ProjectManager
-        from pathlib import Path
-        config_dir = Path.home() / ".config" / "lftools-ng"
-        from lftools_ng.core.projects import ProjectManager
-        self.project_manager = ProjectManager(config_dir)
+        # Load projects data directly from resources
         self.projects_data = self._load_projects_data()
 
     def _load_projects_data(self) -> Dict[str, Any]:
-        """Load projects data using unified data loading mechanism."""
+        """Load projects data from resources."""
         try:
-            projects_list = self.project_manager.get_projects_data()
-            return {"projects": projects_list}
+            # Get the path to the resources directory
+            from pathlib import Path
+            import lftools_ng
+            resources_dir = Path(lftools_ng.__file__).parent.parent.parent / "resources"
+            projects_file = resources_dir / "projects.yaml"
+
+            if projects_file.exists():
+                import yaml
+                with open(projects_file) as f:
+                    return yaml.safe_load(f) or {}
         except Exception as e:
-            self.logger.warning(f"Could not load projects data via ProjectManager: {e}")
-            return {}
+            self.logger.warning(f"Could not load projects data: {e}")
+
+        return {}
 
     def find_project_by_name(self, project_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -255,8 +260,7 @@ class ProjectAwareMigrationManager:
                 "github_url": mapping.github_url,
                 "project": mapping.project,
                 "migration_source": mapping.jenkins_credential_id,
-                "migration_type": "repository_deployment",
-                "migration_origin": "Migrated from Jenkins"  # This will create the origin/source field as STRING type
+                "migration_type": "repository_deployment"
             }
         )
 

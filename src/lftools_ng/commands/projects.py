@@ -827,7 +827,7 @@ def _determine_project_primary_scm(project: Dict[str, Any], manager: ProjectMana
 
     # Try to find the project in aliases by name matching
     from lftools_ng.core.models import PROJECT_ALIASES
-    
+
     project_name = project.get("name", "")
     if isinstance(project_name, str):
         project_lower = project_name.lower()

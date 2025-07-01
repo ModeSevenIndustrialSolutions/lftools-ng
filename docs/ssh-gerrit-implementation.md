@@ -38,11 +38,13 @@ This document describes the implementation of SSH-based Gerrit repository discov
 ### 3. Repository Discovery Workflow
 
 1. **Gerrit Discovery** (SSH-based):
+
    ```bash
    ssh username@gerrit.example.org -p 29418 gerrit ls-projects --format json --all
    ```
 
 2. **GitHub Discovery** (API-based):
+
    ```bash
    https://api.github.com/orgs/{organization}/repos
    ```
@@ -55,22 +57,26 @@ This document describes the implementation of SSH-based Gerrit repository discov
 ## Benefits
 
 ### 1. Cloudflare Bot Protection Bypass
+
 - SSH connections (TCP/29418) bypass Cloudflare HTTP/HTTPS bot detection
 - No more rate limiting or blocking of automated repository discovery
 - Reliable access to Gerrit instances behind CDNs
 
 ### 2. Enhanced Security
+
 - Leverages existing SSH key infrastructure
 - Supports hardware security keys (YubiKey, etc.)
 - Works with secure enclave solutions (macOS Secretive)
 - No need to store or manage additional API tokens
 
 ### 3. Improved Reliability
+
 - SSH connections are more reliable than HTTP scraping
 - Native Gerrit SSH API provides structured JSON output
 - Better error handling and connectivity diagnostics
 
 ### 4. Local Configuration Respect
+
 - Uses existing SSH configuration in `~/.ssh/config`
 - Respects SSH agent settings and key preferences
 - Works with SSH multiplexing and connection reuse
@@ -78,6 +84,7 @@ This document describes the implementation of SSH-based Gerrit repository discov
 ## Usage Examples
 
 ### Basic Repository Discovery
+
 ```bash
 # Discover repositories for ONAP project via SSH
 lftools-ng projects repositories rebuild --force
@@ -87,6 +94,7 @@ lftools-ng projects repositories list ONAP
 ```
 
 ### SSH Configuration Example
+
 ```ssh
 # ~/.ssh/config
 Host gerrit.onap.org
@@ -101,6 +109,7 @@ Host gerrit.o-ran-sc.org
 ```
 
 ### Testing SSH Connectivity
+
 ```python
 from lftools_ng.core.gerrit_ssh import GerritSSHClient
 
@@ -115,15 +124,18 @@ print(f"Found {len(projects)} projects via SSH")
 ## Implementation Details
 
 ### Gerrit SSH Commands Used
+
 - `gerrit version` - Test connectivity and verify Gerrit version
 - `gerrit ls-projects --format json --all` - List all projects with metadata
 
 ### Repository Mapping Logic
+
 - **Gerrit → GitHub**: `project/subproject/repo` → `repo` or `project-subproject-repo`
 - **GitHub → Gerrit**: Reverse lookup with candidate matching
 - **Bidirectional**: Maintains mapping tables for cross-platform operations
 
 ### Error Handling
+
 - SSH connection timeouts and retries
 - Authentication failure detection
 - Graceful fallback for missing SSH configuration
@@ -132,11 +144,13 @@ print(f"Found {len(projects)} projects via SSH")
 ## Migration from HTTP/HTTPS
 
 ### Removed Components
+
 - HTTP-based Gerrit API access (`/a/projects/` endpoints)
 - Web scraping of Gerrit interfaces
 - HTTP authentication and session management
 
 ### Preserved Components
+
 - GitHub API access (still uses HTTPS as appropriate)
 - Existing SSH infrastructure (enhanced and integrated)
 - Repository database format and CLI commands
@@ -144,6 +158,7 @@ print(f"Found {len(projects)} projects via SSH")
 ## Testing
 
 The implementation has been tested with:
+
 - ONAP Gerrit (441 projects discovered)
 - O-RAN-SC Gerrit (158 projects discovered)
 - Multiple SSH authentication methods
@@ -175,6 +190,7 @@ The implementation has been tested with:
    - Confirm Gerrit SSH is enabled
 
 ### Debug Logging
+
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)

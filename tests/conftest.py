@@ -6,7 +6,8 @@
 import pathlib
 import shutil
 import tempfile
-from typing import Any, Dict, Generator
+from collections.abc import Generator
+from typing import Any
 
 import pytest
 
@@ -48,7 +49,7 @@ def project_manager_with_test_data(temp_config_dir: pathlib.Path) -> ProjectMana
 
 
 @pytest.fixture
-def sample_project_data() -> Dict[str, Any]:
+def sample_project_data() -> dict[str, Any]:
     """Sample project data for testing."""
     return {
         "name": "TestProject1",
@@ -63,12 +64,12 @@ def sample_project_data() -> Dict[str, Any]:
         "nexus_server": "https://nexus.testproject1.org/",
         "sonar_server": "https://sonar.testproject1.org/",
         "created": TEST_DATE_CREATED,
-        "updated": TEST_DATE_UPDATED
+        "updated": TEST_DATE_UPDATED,
     }
 
 
 @pytest.fixture
-def sample_server_data() -> Dict[str, Any]:
+def sample_server_data() -> dict[str, Any]:
     """Sample server data for testing."""
     return {
         "name": "jenkins.testproject1.org",
@@ -82,12 +83,12 @@ def sample_server_data() -> Dict[str, Any]:
         "last_checked": TEST_DATE_UPDATED,
         "created": TEST_DATE_CREATED,
         "updated": TEST_DATE_UPDATED,
-        "projects": ["TestProject1"]
+        "projects": ["TestProject1"],
     }
 
 
 @pytest.fixture
-def sample_repository_data() -> Dict[str, Any]:
+def sample_repository_data() -> dict[str, Any]:
     """Sample repository data for testing."""
     return {
         "project": "TestProject1",
@@ -96,5 +97,5 @@ def sample_repository_data() -> Dict[str, Any]:
         "description": "Core module for TestProject1",
         "archived": False,
         "created": TEST_DATE_CREATED,
-        "updated": TEST_DATE_UPDATED
+        "updated": TEST_DATE_UPDATED,
     }

@@ -3,12 +3,11 @@
 
 """Integration tests for SSH-based repository discovery."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 import json
+from unittest.mock import Mock, patch
 
-from lftools_ng.core.repository_discovery import RepositoryDiscovery
 from lftools_ng.core.gerrit_ssh import GerritSSHClient
+from lftools_ng.core.repository_discovery import RepositoryDiscovery
 
 
 class TestSSHRepositoryDiscoveryIntegration:
@@ -18,8 +17,8 @@ class TestSSHRepositoryDiscoveryIntegration:
         """Set up test fixtures."""
         self.discovery = RepositoryDiscovery()
 
-    @patch('subprocess.run')
-    @patch('lftools_ng.core.gerrit_ssh.SSHConfigParser')
+    @patch("subprocess.run")
+    @patch("lftools_ng.core.gerrit_ssh.SSHConfigParser")
     def test_end_to_end_gerrit_discovery(self, mock_ssh_config, mock_subprocess):
         """Test end-to-end Gerrit repository discovery via SSH."""
         # Mock SSH config
@@ -29,29 +28,19 @@ class TestSSHRepositoryDiscoveryIntegration:
 
         # Mock SSH response with realistic ONAP-style repositories
         mock_projects = [
-            {
-                "name": "aai/aai-common",
-                "description": "AAI Common library",
-                "state": "ACTIVE"
-            },
-            {
-                "name": "aai/babel",
-                "description": "AAI Babel microservice",
-                "state": "ACTIVE"
-            },
+            {"name": "aai/aai-common", "description": "AAI Common library", "state": "ACTIVE"},
+            {"name": "aai/babel", "description": "AAI Babel microservice", "state": "ACTIVE"},
             {
                 "name": "integration/testsuite",
                 "description": "Integration test suite",
-                "state": "READ_ONLY"
-            }
+                "state": "READ_ONLY",
+            },
         ]
 
         from subprocess import CompletedProcess
+
         mock_subprocess.return_value = CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=json.dumps(mock_projects),
-            stderr=""
+            args=[], returncode=0, stdout=json.dumps(mock_projects), stderr=""
         )
 
         # Test project data similar to real ONAP configuration
@@ -59,7 +48,7 @@ class TestSSHRepositoryDiscoveryIntegration:
             "name": "ONAP",
             "primary_scm": "gerrit",
             "gerrit_url": "https://gerrit.onap.org",
-            "github_mirror_org": "onap"
+            "github_mirror_org": "onap",
         }
 
         # Perform discovery
@@ -81,9 +70,9 @@ class TestSSHRepositoryDiscoveryIntegration:
         assert integration_repo["gerrit_path"] == "integration/testsuite"
         assert integration_repo["archived"] is True  # READ_ONLY state
 
-    @patch('subprocess.run')
-    @patch('lftools_ng.core.gerrit_ssh.SSHConfigParser')
-    @patch('lftools_ng.core.github_discovery.GitHubDiscovery')
+    @patch("subprocess.run")
+    @patch("lftools_ng.core.gerrit_ssh.SSHConfigParser")
+    @patch("lftools_ng.core.github_discovery.GitHubDiscovery")
     def test_gerrit_with_github_mirrors(self, mock_github_class, mock_ssh_config, mock_subprocess):
         """Test Gerrit discovery enhanced with GitHub mirror information."""
         # Mock SSH config
@@ -96,16 +85,14 @@ class TestSSHRepositoryDiscoveryIntegration:
             {
                 "name": "project/awesome-tool",
                 "description": "An awesome development tool",
-                "state": "ACTIVE"
+                "state": "ACTIVE",
             }
         ]
 
         from subprocess import CompletedProcess
+
         mock_subprocess.return_value = CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=json.dumps(mock_gerrit_projects),
-            stderr=""
+            args=[], returncode=0, stdout=json.dumps(mock_gerrit_projects), stderr=""
         )
 
         # Mock GitHub discovery
@@ -115,7 +102,7 @@ class TestSSHRepositoryDiscoveryIntegration:
                 "name": "awesome-tool",
                 "description": "Mirror: An awesome development tool",
                 "archived": False,
-                "private": False
+                "private": False,
             }
         ]
         mock_github_class.return_value = mock_github_discovery
@@ -125,7 +112,7 @@ class TestSSHRepositoryDiscoveryIntegration:
             "name": "TestProject",
             "primary_scm": "gerrit",
             "gerrit_url": "https://gerrit.example.org",
-            "github_mirror_org": "test-project"
+            "github_mirror_org": "test-project",
         }
 
         # Perform discovery
@@ -144,8 +131,8 @@ class TestSSHRepositoryDiscoveryIntegration:
         assert repo["github_mirror_name"] == "awesome-tool"
         assert repo["github_mirror_url"] == "https://github.com/test-project/awesome-tool"
 
-    @patch('subprocess.run')
-    @patch('lftools_ng.core.gerrit_ssh.SSHConfigParser')
+    @patch("subprocess.run")
+    @patch("lftools_ng.core.gerrit_ssh.SSHConfigParser")
     def test_ssh_connection_failure_handling(self, mock_ssh_config, mock_subprocess):
         """Test graceful handling of SSH connection failures."""
         # Mock SSH config
@@ -155,17 +142,18 @@ class TestSSHRepositoryDiscoveryIntegration:
 
         # Mock SSH failure
         from subprocess import CompletedProcess
+
         mock_subprocess.return_value = CompletedProcess(
             args=[],
             returncode=255,  # SSH connection failure
             stdout="",
-            stderr="ssh: connect to host gerrit.example.org port 29418: Connection refused"
+            stderr="ssh: connect to host gerrit.example.org port 29418: Connection refused",
         )
 
         project_data = {
             "name": "TestProject",
             "primary_scm": "gerrit",
-            "gerrit_url": "https://gerrit.example.org"
+            "gerrit_url": "https://gerrit.example.org",
         }
 
         # Perform discovery - should handle failure gracefully
@@ -194,7 +182,7 @@ class TestSSHRepositoryDiscoveryIntegration:
         normalized = mapper.normalize_repository_name("Project-Name_123")
         assert normalized == "project-name_123"
 
-    @patch('lftools_ng.core.gerrit_ssh.SSHConfigParser')
+    @patch("lftools_ng.core.gerrit_ssh.SSHConfigParser")
     def test_ssh_username_resolution(self, mock_ssh_config):
         """Test SSH username resolution from SSH config."""
         # Mock SSH config with username mapping
@@ -211,17 +199,14 @@ class TestSSHRepositoryDiscoveryIntegration:
     def test_project_data_validation(self):
         """Test validation of project data configurations."""
         # Test missing primary_scm
-        project_data = {
-            "name": "TestProject",
-            "gerrit_url": "https://gerrit.example.org"
-        }
+        project_data = {"name": "TestProject", "gerrit_url": "https://gerrit.example.org"}
         repositories = self.discovery.discover_repositories("TestProject", project_data)
         assert repositories == []
 
         # Test missing SCM URL
         project_data = {
             "name": "TestProject",
-            "primary_scm": "gerrit"
+            "primary_scm": "gerrit",
             # Missing gerrit_url
         }
         repositories = self.discovery.discover_repositories("TestProject", project_data)
@@ -231,7 +216,7 @@ class TestSSHRepositoryDiscoveryIntegration:
         project_data = {
             "name": "TestProject",
             "primary_scm": "svn",
-            "svn_url": "https://svn.example.org"
+            "svn_url": "https://svn.example.org",
         }
         repositories = self.discovery.discover_repositories("TestProject", project_data)
         assert repositories == []
@@ -257,7 +242,7 @@ class TestRealWorldScenarios:
             "integration/devtoolkit",
             "policy/engine",
             "policy/api",
-            "sdc/sdc-workflow-designer"
+            "sdc/sdc-workflow-designer",
         ]
 
         # Test mapping for each
@@ -266,12 +251,16 @@ class TestRealWorldScenarios:
             "aai/babel": "babel",
             "integration/testsuite": "testsuite",
             "policy/engine": "engine",
-            "sdc/sdc-workflow-designer": "sdc-workflow-designer"
+            "sdc/sdc-workflow-designer": "sdc-workflow-designer",
         }
 
         for gerrit_path, expected_github in expected_mappings.items():
+            # Ensure this path is in our test data
+            assert gerrit_path in onap_repos, f"Test repository {gerrit_path} not in onap_repos"
             result = mapper.gerrit_to_github_name(gerrit_path)
-            assert result == expected_github, f"Failed for {gerrit_path}: got {result}, expected {expected_github}"
+            assert result == expected_github, (
+                f"Failed for {gerrit_path}: got {result}, expected {expected_github}"
+            )
 
     def test_oran_style_repository_structure(self):
         """Test with O-RAN-SC style repository structure."""
@@ -283,19 +272,23 @@ class TestRealWorldScenarios:
             "ric-plt/e2mgr",
             "ric-plt/rtmgr",
             "sim/o1-interface",
-            "nonrtric/plt/rappmanager"
+            "nonrtric/plt/rappmanager",
         ]
 
         expected_mappings = {
             "pti/rtp": "rtp",
             "ric-plt/e2mgr": "e2mgr",
             "sim/o1-interface": "o1-interface",
-            "nonrtric/plt/rappmanager": "rappmanager"
+            "nonrtric/plt/rappmanager": "rappmanager",
         }
 
         for gerrit_path, expected_github in expected_mappings.items():
+            # Ensure this path is in our test data
+            assert gerrit_path in oran_repos, f"Test repository {gerrit_path} not in oran_repos"
             result = mapper.gerrit_to_github_name(gerrit_path)
-            assert result == expected_github, f"Failed for {gerrit_path}: got {result}, expected {expected_github}"
+            assert result == expected_github, (
+                f"Failed for {gerrit_path}: got {result}, expected {expected_github}"
+            )
 
     def test_reverse_mapping_fuzzy_matching(self):
         """Test reverse mapping with fuzzy matching capabilities."""
@@ -308,7 +301,7 @@ class TestRealWorldScenarios:
             "integration/testsuite",
             "integration/devtoolkit",
             "policy/engine",
-            "policy/api"
+            "policy/api",
         ]
 
         # Test finding candidates for various GitHub names
@@ -323,4 +316,6 @@ class TestRealWorldScenarios:
         for github_name, expected_candidates in test_cases:
             candidates = mapper.github_to_gerrit_candidates(github_name, project_gerrit_repos)
             for expected in expected_candidates:
-                assert expected in candidates, f"Expected {expected} in candidates for {github_name}, got {candidates}"
+                assert expected in candidates, (
+                    f"Expected {expected} in candidates for {github_name}, got {candidates}"
+                )

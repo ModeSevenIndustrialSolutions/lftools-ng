@@ -32,11 +32,13 @@ For existing users:
 ### 1. Data Source Architecture
 
 **Primary Data Source**:
-- Linux Foundation platforms inventory: https://docs.releng.linuxfoundation.org/en/latest/infra/inventory.html
+
+- Linux Foundation platforms inventory: <https://docs.releng.linuxfoundation.org/en/latest/infra/inventory.html>
 - This URL is hardcoded in `src/lftools_ng/core/inventory_parser.py` as `INVENTORY_URL`
 - Can be updated later if the URL changes
 
 **Secondary Data Source**:
+
 - Tailscale VPN network via `tailscale status` command
 - Cross-platform support (macOS and Linux)
 - Requires active VPN connection and authentication
@@ -44,12 +46,14 @@ For existing users:
 ### 2. Data Packaging Strategy
 
 **Generated Locally** (No bundled data):
+
 - `~/.config/lftools-ng/projects.yaml` - Built from SSH discovery and PROJECT_ALIASES
 - `~/.config/lftools-ng/repositories.yaml` - Built from SSH discovery via Gerrit
 - `~/.config/lftools-ng/servers.yaml` - Built on-demand from Tailscale VPN
 - **All data sources require live discovery** - no pre-built or embedded data
 
 **Security-Sensitive Data** (Requires VPN access):
+
 - `~/.config/lftools-ng/servers.yaml` - Built on-demand from Tailscale VPN
 - Contains VPN addresses, internal network topology
 - Only accessible to users with active Tailscale VPN connectivity
@@ -57,6 +61,7 @@ For existing users:
 ### 3. Repository Data Discovery
 
 **SSH-Based Discovery Only**:
+
 - Repository data is **only** sourced from live SSH connections to Gerrit servers
 - On first run or missing data, user is prompted to rebuild via SSH discovery
 - No fallback to embedded or pre-built repository data
@@ -65,6 +70,7 @@ For existing users:
 ### 4. Server Data Rebuild Process
 
 Enhanced `ProjectManager.rebuild_servers_database()`:
+
 - Requires active Tailscale VPN connection
 - Integrates multiple data sources:
   1. Projects data (for basic server enumeration)
@@ -77,25 +83,30 @@ Enhanced `ProjectManager.rebuild_servers_database()`:
 Enhanced `TailscaleParser` with advanced logic:
 
 **Platform Support**:
+
 - macOS: `/Applications/Tailscale.app/Contents/MacOS/Tailscale`
 - Linux: Multiple paths tried (`/usr/bin/tailscale`, `/usr/local/bin/tailscale`, etc.)
 
 **Server Type Detection**:
+
 - Jenkins, Gerrit, Nexus (2 & 3), SonarQube, etc.
 - Fuzzy matching with project name extraction
 
 **Nexus Version Logic** (as requested):
+
 - Single instance → Assume Nexus 3 (modern)
 - Multiple instances → Lower numbers (1,2) = Nexus 2, Higher (3+) = Nexus 3
 - Explicit `nexus3` in name → Nexus 3
 
 **Jenkins Production/Sandbox Logic** (as requested):
+
 - Explicit `prod`/`production` → Production
 - Explicit `sandbox` → Sandbox
 - Number hierarchy: 1,2 = Production, 3+ = Sandbox
 - Default: Production
 
 **Hosting Provider Detection**:
+
 - `vex-*` → VEXXHOST
 - `aws-*` → Amazon Web Services
 - `gce-*` → Google Cloud Engine
@@ -106,6 +117,7 @@ Enhanced `TailscaleParser` with advanced logic:
 ### 6. Server Database Gating
 
 Modified `ProjectManager._ensure_servers_database_exists()`:
+
 - Detects missing server database
 - Prompts user about VPN requirement
 - Auto-builds if user consents and VPN is available
@@ -115,11 +127,13 @@ Modified `ProjectManager._ensure_servers_database_exists()`:
 ### 7. Security Considerations
 
 **Sensitive Data Protection**:
+
 - VPN addresses never committed to source control
 - Internal network topology not bundled in packages
 - Server data requires local VPN access to generate
 
 **Access Control**:
+
 - Server listings only work for users with Tailscale VPN access
 - Projects and repositories work out-of-the-box for all users
 - Clear separation between public and private data
@@ -188,6 +202,7 @@ lftools-ng projects servers list
 ```
 
 ### Manual Server Rebuild
+
 ```bash
 lftools-ng projects rebuild-servers --force
 # 🔒 Requires active Tailscale VPN connection
@@ -207,6 +222,7 @@ lftools-ng projects rebuild-servers --force
 ## Migration Path
 
 For existing users:
+
 1. Projects and repositories will auto-populate on first run
 2. Existing `servers.yaml` files continue to work
 3. Users can rebuild servers with `--force` to get enhanced data
@@ -215,6 +231,7 @@ For existing users:
 ## Future Enhancements
 
 Potential areas for future improvement:
+
 1. Cache server data with expiration for offline use
 2. Add server health monitoring integration
 3. Expand to additional hosting providers

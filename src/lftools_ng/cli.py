@@ -13,6 +13,7 @@ from lftools_ng import __version__
 from lftools_ng.commands.jenkins import jenkins_app
 from lftools_ng.commands.projects import projects_app
 from lftools_ng.commands.rebuild import rebuild_app
+from lftools_ng.commands.repository_migrate import app as repository_migrate_app
 
 app = typer.Typer(
     name="lftools-ng",
@@ -26,6 +27,7 @@ console = Console()
 app.add_typer(jenkins_app, name="jenkins", help="Jenkins server operations with unified credential management")
 app.add_typer(projects_app, name="projects", help="Project management operations")
 app.add_typer(rebuild_app, name="rebuild-data", help="Rebuild all backend data files")
+app.add_typer(repository_migrate_app, name="migrate", help="Migration tools for credentials and configurations")
 
 
 @app.callback(invoke_without_command=True)

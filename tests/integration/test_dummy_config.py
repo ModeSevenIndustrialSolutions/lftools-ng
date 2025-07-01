@@ -60,14 +60,18 @@ class TestConfigIntegration:
         has_test_projects = False
         for server in data["servers"]:
             projects = server.get("projects", [])
-            if any(p in ["TestProject1", "TestProject2", "TestProject3", "ArchivedProject"] 
-                   for p in projects):
+            if any(
+                p in ["TestProject1", "TestProject2", "TestProject3", "ArchivedProject"]
+                for p in projects
+            ):
                 has_test_projects = True
                 break
 
         assert has_test_projects, "No servers found with test projects"
 
-    def test_project_manager_with_test_data(self, project_manager_with_test_data: ProjectManager) -> None:
+    def test_project_manager_with_test_data(
+        self, project_manager_with_test_data: ProjectManager
+    ) -> None:
         """Test that ProjectManager works with test data."""
         # Test loading projects
         projects = project_manager_with_test_data.list_projects()
