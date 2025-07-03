@@ -125,14 +125,19 @@ def rebuild_data(
                     progress.update(task_repos, completed=100)
                 else:
                     try:
-                        # For repositories, we need to ensure the file exists by building it
-                        # if it doesn't exist, but we don't force rebuild
-                        console.print("[green]✓ Repositories database ready[/green]")
+                        # Rebuild repositories data
+                        repos_result = manager.rebuild_repositories_database(force=force)
+                        progress.update(task_repos, completed=50)
+
+                        console.print(f"[green]✓ Repositories database rebuilt successfully[/green]")
+                        console.print(f"[green]  - Repositories loaded: {repos_result.get('repositories_count', 0)}[/green]")
+                        console.print(f"[green]  - Active: {repos_result.get('active_count', 0)}[/green]")
+                        console.print(f"[green]  - Archived: {repos_result.get('archived_count', 0)}[/green]")
                         console.print(f"[green]  - File: {manager.repositories_file}[/green]")
                         progress.update(task_repos, completed=100)
 
                     except Exception as e:
-                        console.print(f"[red]✗ Failed to initialize repositories database: {e}[/red]")
+                        console.print(f"[red]✗ Failed to rebuild repositories database: {e}[/red]")
                         progress.update(task_repos, completed=100)
 
         # Summary

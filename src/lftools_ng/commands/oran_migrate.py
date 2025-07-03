@@ -50,22 +50,20 @@ class ProjectAwareMigrationManager:
         self.console = Console()
         self.logger = logging.getLogger(__name__)
 
-        # Load projects data directly from resources
+        # Load projects data directly from built-in PROJECT_ALIASES
         self.projects_data = self._load_projects_data()
 
     def _load_projects_data(self) -> Dict[str, Any]:
-        """Load projects data from resources."""
+        """Load projects data from built-in PROJECT_ALIASES."""
         try:
-            # Get the path to the resources directory
-            from pathlib import Path
-            import lftools_ng
-            resources_dir = Path(lftools_ng.__file__).parent.parent.parent / "resources"
-            projects_file = resources_dir / "projects.yaml"
+            from lftools_ng.core.models import PROJECT_ALIASES
 
-            if projects_file.exists():
-                import yaml
-                with open(projects_file) as f:
-                    return yaml.safe_load(f) or {}
+            # Convert PROJECT_ALIASES to the expected format
+            projects_data = {}
+            for project_key, project_info in PROJECT_ALIASES.items():
+                projects_data[project_key] = project_info.copy()
+
+            return projects_data
         except Exception as e:
             self.logger.warning(f"Could not load projects data: {e}")
 

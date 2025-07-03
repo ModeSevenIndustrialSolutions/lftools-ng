@@ -156,13 +156,20 @@ class RepositoryDiscovery:
             return repositories
 
         # Discover from primary SCM only
+        github_errors = []
+        ssh_errors = []
+
         if primary_scm == "gerrit":
-            gerrit_repos = self._discover_gerrit_repositories(primary_scm_url, project_data)
+            gerrit_repos, ssh_error = self._discover_gerrit_repositories(primary_scm_url, project_data)
             repositories.extend(gerrit_repos)
+            if ssh_error:
+                ssh_errors.append(f"{project_name}: {ssh_error}")
             logger.info(f"Discovered {len(gerrit_repos)} repositories from Gerrit for {project_name}")
         elif primary_scm == "github":
-            github_repos = self._discover_github_repositories(primary_scm_url)
+            github_repos, github_error = self._discover_github_repositories(primary_scm_url)
             repositories.extend(github_repos)
+            if github_error:
+                github_errors.append(f"{project_name}: {github_error}")
             logger.info(f"Discovered {len(github_repos)} repositories from GitHub for {project_name}")
         else:
             logger.warning(f"Unsupported primary SCM for {project_name}: {primary_scm}")
@@ -171,16 +178,25 @@ class RepositoryDiscovery:
         # Add GitHub mirror metadata if available (but don't duplicate repositories)
         github_mirror_org = project_data.get("github_mirror_org")
         if github_mirror_org and primary_scm == "gerrit":
-            self._add_github_mirror_metadata(repositories, github_mirror_org)
+            mirror_errors = self._add_github_mirror_metadata(repositories, github_mirror_org)
+            github_errors.extend(mirror_errors)
 
         # Add project metadata to all repositories
         for repo in repositories:
             repo["project"] = project_name
 
+        # Log any errors encountered
+        if github_errors:
+            for error in github_errors:
+                logger.warning(f"GitHub API error: {error}")
+        if ssh_errors:
+            for error in ssh_errors:
+                logger.warning(f"SSH error: {error}")
+
         logger.info(f"Total repositories discovered for {project_name}: {len(repositories)}")
         return repositories
 
-    def _discover_gerrit_repositories(self, gerrit_url: str, project_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _discover_gerrit_repositories(self, gerrit_url: str, project_data: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Discover repositories from a Gerrit instance using SSH.
 
         Args:
@@ -188,10 +204,11 @@ class RepositoryDiscovery:
             project_data: Project configuration
 
         Returns:
-            List of repository dictionaries
+            Tuple of (list of repository dictionaries, error message if any)
         """
         repositories: List[Dict[str, Any]] = []
         project_name = project_data.get("name", "")
+        error_msg = None
 
         try:
             logger.info(f"Discovering Gerrit repositories via SSH for {project_name}")
@@ -200,8 +217,9 @@ class RepositoryDiscovery:
             projects = self.gerrit_ssh_client.list_projects(gerrit_url)
 
             if not projects:
-                logger.warning(f"No projects found for {gerrit_url} via SSH")
-                return repositories
+                error_msg = f"No projects found for {gerrit_url} via SSH"
+                logger.warning(error_msg)
+                return repositories, error_msg
 
             # Convert to repository format
             for project in projects:
@@ -223,27 +241,28 @@ class RepositoryDiscovery:
             logger.info(f"Discovered {len(repositories)} Gerrit repositories for {project_name}")
 
         except Exception as e:
-            logger.error(f"Failed to discover Gerrit repositories from {gerrit_url} via SSH: {e}")
+            error_msg = f"Failed to discover Gerrit repositories from {gerrit_url} via SSH: {e}"
+            logger.error(error_msg)
 
-        return repositories
+        return repositories, error_msg
 
-    def _discover_github_repositories(self, github_url: str) -> List[Dict[str, Any]]:
+    def _discover_github_repositories(self, github_url: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Discover repositories from a GitHub organization.
 
         Args:
             github_url: GitHub organization or repository URL
-            project_data: Optional project data for context
 
         Returns:
-            List of repository dictionaries
+            Tuple of (list of repository dictionaries, error message if any)
         """
         repositories: List[Dict[str, Any]] = []
+        error_msg = None
 
         try:
             # Extract organization from URL
             org_name = self._extract_github_org_from_url(github_url)
             if not org_name:
-                return repositories
+                return repositories, "Could not extract organization name from URL"
 
             # Use GitHub API to list repositories
             api_url = f"https://api.github.com/orgs/{org_name}/repos"
@@ -254,8 +273,17 @@ class RepositoryDiscovery:
                 params = {"page": page, "per_page": 100}
                 response = self.client.get(api_url, params=params)
 
-                if response.status_code != 200:
-                    logger.warning(f"GitHub API returned {response.status_code} for {api_url}")
+                if response.status_code == 403:
+                    error_msg = f"GitHub API access forbidden for org '{org_name}' - likely rate limited or authentication issue"
+                    logger.warning(error_msg)
+                    break
+                elif response.status_code == 404:
+                    error_msg = f"GitHub organization '{org_name}' not found"
+                    logger.warning(error_msg)
+                    break
+                elif response.status_code != 200:
+                    error_msg = f"GitHub API returned {response.status_code} for org '{org_name}'"
+                    logger.warning(error_msg)
                     break
 
                 repos_data = response.json()
@@ -281,20 +309,28 @@ class RepositoryDiscovery:
                 page += 1
 
         except Exception as e:
-            logger.error(f"Failed to discover GitHub repositories: {e}")
+            error_msg = f"Failed to discover GitHub repositories for '{org_name}': {e}"
+            logger.error(error_msg)
 
-        return repositories
+        return repositories, error_msg
 
-    def _add_github_mirror_metadata(self, repositories: List[Dict[str, Any]], github_org: str) -> None:
+    def _add_github_mirror_metadata(self, repositories: List[Dict[str, Any]], github_org: str) -> List[str]:
         """Add GitHub mirror metadata to repositories without creating duplicates.
 
         Args:
             repositories: List of repositories to enhance (modified in-place)
             github_org: GitHub organization name
+
+        Returns:
+            List of error messages encountered
         """
+        errors = []
         try:
             # Get all GitHub repositories for the organization
-            github_repos = self._discover_github_repositories(f"https://github.com/{github_org}")
+            github_repos, error = self._discover_github_repositories(f"https://github.com/{github_org}")
+            if error:
+                errors.append(f"GitHub mirror lookup for {github_org}: {error}")
+                return errors
 
             # Create lookup by GitHub name
             github_lookup = {repo["github_name"]: repo for repo in github_repos}
@@ -316,7 +352,11 @@ class RepositoryDiscovery:
                         })
 
         except Exception as e:
-            logger.warning(f"Failed to add GitHub mirror metadata: {e}")
+            error_msg = f"Failed to add GitHub mirror metadata for {github_org}: {e}"
+            errors.append(error_msg)
+            logger.warning(error_msg)
+
+        return errors
 
     def _enhance_with_github_mirrors(self, repositories: List[Dict[str, Any]],
                                    github_org: str) -> None:
@@ -395,3 +435,52 @@ class RepositoryDiscovery:
     def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         """Context manager exit."""
         self.close()
+
+    def check_github_authentication_status(self) -> Dict[str, Any]:
+        """Check GitHub authentication status before making API calls.
+
+        Returns:
+            Dictionary with authentication status information
+        """
+        status = {
+            "authenticated": False,
+            "user": None,
+            "rate_limit": None,
+            "error": None
+        }
+
+        try:
+            # Test authentication with user endpoint
+            response = self.client.get("https://api.github.com/user", timeout=10)
+
+            if response.status_code == 200:
+                user_data = response.json()
+                status["authenticated"] = True
+                status["user"] = user_data.get("login", "unknown")
+                logger.info(f"GitHub authentication successful for user: {status['user']}")
+            elif response.status_code == 401:
+                status["error"] = "GitHub authentication failed - invalid or missing token"
+                logger.warning("GitHub API returned 401 - authentication failed")
+            elif response.status_code == 403:
+                status["error"] = "GitHub API access forbidden - rate limited or token lacks permissions"
+                logger.warning("GitHub API returned 403 - access forbidden")
+            else:
+                status["error"] = f"GitHub API returned unexpected status: {response.status_code}"
+                logger.warning(f"GitHub API returned {response.status_code}")
+
+            # Get rate limit information regardless of auth status
+            rate_limit_response = self.client.get("https://api.github.com/rate_limit", timeout=10)
+            if rate_limit_response.status_code == 200:
+                rate_limit_data = rate_limit_response.json()
+                core_limits = rate_limit_data.get("resources", {}).get("core", {})
+                status["rate_limit"] = {
+                    "remaining": core_limits.get("remaining", 0),
+                    "limit": core_limits.get("limit", 0),
+                    "reset_time": core_limits.get("reset", 0)
+                }
+
+        except Exception as e:
+            status["error"] = f"Failed to check GitHub authentication: {e}"
+            logger.error(f"Error checking GitHub authentication: {e}")
+
+        return status

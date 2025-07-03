@@ -214,6 +214,14 @@ def list_servers(
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
+
+        # Check if servers database exists, prompt for rebuild if needed
+        if not manager.ensure_servers_database_exists():
+            console.print("[yellow]⚠️  Cannot proceed without servers database.[/yellow]")
+            console.print("To manually build the database, run:")
+            console.print("  [cyan]lftools-ng projects rebuild servers --force[/cyan]")
+            raise typer.Exit(1)
+
         servers = manager.list_servers()
 
         # Enhance servers with project display field
@@ -698,6 +706,14 @@ def test_connectivity(
     try:
         config_path = pathlib.Path(config_dir) if config_dir else DEFAULT_CONFIG_DIR
         manager = ProjectManager(config_path)
+
+        # Check if servers database exists, prompt for rebuild if needed
+        if not manager.ensure_servers_database_exists():
+            console.print("[yellow]⚠️  Cannot proceed without servers database.[/yellow]")
+            console.print("To manually build the database, run:")
+            console.print("  [cyan]lftools-ng projects rebuild servers --force[/cyan]")
+            raise typer.Exit(1)
+
         servers = manager.list_servers()
 
         # Filter servers if specified

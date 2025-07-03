@@ -53,36 +53,208 @@ class ProjectManager:
 
     def _auto_initialize_config(self) -> None:
         """Auto-initialize configuration from resources directory if config files don't exist."""
+        # Resources directory has been removed from the repository
+        # All data files should be built from live sources when needed
+        pass
+
+    def ensure_projects_database_exists(self) -> bool:
+        """Ensure projects database exists, prompting to rebuild if missing.
+
+        Returns:
+            bool: True if database exists or was successfully rebuilt, False otherwise
+        """
+        if self.projects_file.exists():
+            return True
+
+        logger.info("Projects database not found, prompting to rebuild...")
+        return self._prompt_and_rebuild_all_databases("Projects")
+
+    def ensure_servers_database_exists(self) -> bool:
+        """Ensure servers database exists, prompting to rebuild if missing.
+
+        Returns:
+            bool: True if database exists or was successfully rebuilt, False otherwise
+        """
+        if self.servers_file.exists():
+            return True
+
+        logger.info("Servers database not found, prompting to rebuild...")
+        return self._prompt_and_rebuild_all_databases("Servers")
+
+    def ensure_repositories_database_exists(self) -> bool:
+        """Ensure repositories database exists, prompting to rebuild if missing.
+
+        Returns:
+            bool: True if database exists or was successfully rebuilt, False otherwise
+        """
+        if self.repositories_file.exists():
+            return True
+
+        logger.info("Repositories database not found, prompting to rebuild...")
+        return self._prompt_and_rebuild_all_databases("Repositories")
+
+    def _prompt_and_rebuild_all_databases(self, requested_type: str) -> bool:
+        """Automatically rebuild all databases in the correct sequence when any data file is missing.
+
+        Args:
+            requested_type: The type of database that was requested (for messaging)
+
+        Returns:
+            bool: True if rebuild was successful, False otherwise
+        """
+        from rich.console import Console
+
+        console = Console()
+
+        console.print(f"[yellow]⚠️  {requested_type} database not found![/yellow]")
+        console.print(f"[cyan]Building all databases automatically in sequence: Projects → Servers → Repositories[/cyan]")
+        console.print()
+
+        return self._rebuild_all_databases()
+
+    def _check_github_authentication_status(self) -> Dict[str, Any]:
+        """Check GitHub authentication status before making API calls."""
+        import httpx
+        import os
+
+        status = {
+            "authenticated": False,
+            "user": None,
+            "rate_limit": None,
+            "error": None
+        }
+
+        # Check for GitHub token in environment
+        github_token = os.environ.get('GITHUB_TOKEN')
+        if not github_token:
+            status["error"] = "No GITHUB_TOKEN environment variable found"
+            return status
+
         try:
-            # Find the resources directory relative to this file
-            current_file = pathlib.Path(__file__)
-            # Navigate up from src/lftools_ng/core/projects.py to project root
-            project_root = current_file.parent.parent.parent.parent
-            resources_dir = project_root / "resources"
+            headers = {
+                "Authorization": f"token {github_token}",
+                "User-Agent": "lftools-ng/1.0 (Linux Foundation Repository Discovery)"
+            }
 
-            if not resources_dir.exists():
-                logger.warning(f"Resources directory not found: {resources_dir}")
-                return
+            with httpx.Client(timeout=10.0, headers=headers) as client:
+                response = client.get("https://api.github.com/user")
 
-            files_to_copy = [
-                ("projects.yaml", self.projects_file),
-                ("servers.yaml", self.servers_file),
-                ("repositories.yaml", self.repositories_file)
-            ]
-
-            copied_files = []
-            for resource_file, config_file in files_to_copy:
-                resource_path = resources_dir / resource_file
-                if resource_path.exists() and not config_file.exists():
-                    shutil.copy2(resource_path, config_file)
-                    copied_files.append(resource_file)
-                    logger.info(f"Initialized {config_file} from resources")
-
-            if copied_files:
-                logger.info(f"Auto-initialized configuration with Linux Foundation data: {', '.join(copied_files)}")
+                if response.status_code == 200:
+                    user_data = response.json()
+                    status["authenticated"] = True
+                    status["user"] = user_data.get("login", "unknown")
+                elif response.status_code == 401:
+                    status["error"] = "GitHub authentication failed - invalid or missing token"
+                elif response.status_code == 403:
+                    status["error"] = "GitHub API access forbidden - rate limited or token lacks permissions"
+                else:
+                    status["error"] = f"GitHub API returned unexpected status: {response.status_code}"
 
         except Exception as e:
-            logger.warning(f"Failed to auto-initialize configuration: {e}")
+            status["error"] = f"Failed to check GitHub authentication: {e}"
+
+        return status
+
+    def _rebuild_all_databases(self) -> bool:
+        """Rebuild all databases in the correct sequence: Projects → Servers → Repositories.
+
+        Returns:
+            bool: True if all rebuilds were successful, False otherwise
+        """
+        from rich.console import Console
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+
+        console = Console()
+
+        console.print("[cyan]Rebuilding all databases in sequence...[/cyan]")
+
+        # Check GitHub authentication status before starting
+        github_status = self._check_github_authentication_status()
+        if github_status.get("error"):
+            console.print(f"[yellow]⚠️  GitHub API Warning: {github_status['error']}[/yellow]")
+            if not github_status.get("authenticated"):
+                console.print("[yellow]  GitHub repository discovery may be limited or fail[/yellow]")
+                console.print("[yellow]  To fix: Set GITHUB_TOKEN environment variable with your GitHub Personal Access Token[/yellow]")
+        else:
+            console.print(f"[green]✓ GitHub authentication OK (user: {github_status.get('user', 'unknown')})[/green]")
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+
+            # Step 1: Rebuild projects
+            task_projects = progress.add_task("Building projects database...", total=100)
+            try:
+                projects_result = self.rebuild_projects_database(force=True)
+                progress.update(task_projects, completed=100)
+
+                projects_count = projects_result.get('projects_count', 0)
+                if projects_count == 0:
+                    console.print("[red]✗ Projects database build failed: No projects loaded[/red]")
+                    return False
+
+                console.print("[green]✓ Projects database built successfully[/green]")
+                console.print(f"[green]  - Projects loaded: {projects_count}[/green]")
+            except Exception as e:
+                progress.update(task_projects, completed=100)
+                console.print(f"[red]✗ Failed to build projects database: {e}[/red]")
+                return False
+
+            # Step 2: Rebuild servers
+            task_servers = progress.add_task("Building servers database...", total=100)
+            try:
+                servers_result = self.rebuild_servers_database(force=True)
+                progress.update(task_servers, completed=100)
+
+                servers_count = servers_result.get('servers_count', 0)
+                if servers_count == 0:
+                    console.print("[red]✗ Servers database build failed: No servers loaded[/red]")
+                    return False
+
+                console.print("[green]✓ Servers database built successfully[/green]")
+                console.print(f"[green]  - Servers loaded: {servers_count}[/green]")
+            except Exception as e:
+                progress.update(task_servers, completed=100)
+                console.print(f"[red]✗ Failed to build servers database: {e}[/red]")
+                return False
+
+            # Step 3: Rebuild repositories
+            task_repos = progress.add_task("Building repositories database...", total=100)
+            try:
+                repos_result = self.rebuild_repositories_database(force=True)
+                progress.update(task_repos, completed=100)
+
+                repos_count = repos_result.get('repositories_count', 0)
+                github_errors = repos_result.get('github_errors', 0)
+                ssh_errors = repos_result.get('ssh_errors', 0)
+
+                if repos_count == 0:
+                    console.print("[red]✗ Repositories database build failed: No repositories loaded[/red]")
+                    return False
+
+                # Report partial success if there were significant errors
+                if github_errors > 0 or ssh_errors > 0:
+                    console.print("[yellow]⚠️  Repositories database built with some errors[/yellow]")
+                    if github_errors > 0:
+                        console.print(f"[yellow]  - GitHub API errors: {github_errors}[/yellow]")
+                    if ssh_errors > 0:
+                        console.print(f"[yellow]  - SSH connection errors: {ssh_errors}[/yellow]")
+                else:
+                    console.print("[green]✓ Repositories database built successfully[/green]")
+
+                console.print(f"[green]  - Repositories loaded: {repos_count}[/green]")
+            except Exception as e:
+                progress.update(task_repos, completed=100)
+                console.print(f"[red]✗ Failed to build repositories database: {e}[/red]")
+                return False
+
+        console.print("[bold green]All databases built successfully![/bold green]")
+        console.print(f"[green]Configuration directory: {self.config_dir}[/green]")
+        return True
 
     def list_projects(self) -> List[Dict[str, Any]]:
         """List all registered projects.
@@ -242,17 +414,9 @@ class ProjectManager:
 
         # Default source URLs for LF projects
         if not source_url:
-            # Try to find local resources file relative to the package
-            # Go up from src/lftools_ng/core/projects.py to the project root
-            package_root = pathlib.Path(__file__).parent.parent.parent.parent
-            local_projects_file = package_root / "resources" / "projects.yaml"
-            if local_projects_file.exists():
-                source_url = f"file://{local_projects_file}"
-            else:
-                raise FileNotFoundError(
-                    f"Projects resource file not found at {local_projects_file}. "
-                    "Please ensure the resources directory is present, or specify a source URL."
-                )
+            # Use PROJECT_ALIASES as the built-in data source
+            logger.info("No source URL provided, using built-in PROJECT_ALIASES data")
+            return self._rebuild_from_builtin_data()
 
         try:
             # Fetch project configuration
@@ -284,6 +448,142 @@ class ProjectManager:
             logger.error(f"Failed to rebuild projects database: {e}")
             raise
 
+    def _rebuild_from_builtin_data(self) -> Dict[str, int]:
+        """Rebuild projects database using built-in PROJECT_ALIASES data.
+
+        Returns:
+            Dictionary with rebuild statistics
+        """
+        from lftools_ng.core.models import PROJECT_ALIASES
+
+        try:
+            logger.info("Rebuilding projects database from built-in PROJECT_ALIASES data")
+
+            # Convert PROJECT_ALIASES to the expected project format
+            projects = []
+            for project_key, project_data in PROJECT_ALIASES.items():
+                project = {
+                    "key": project_key,
+                    "name": project_data.get("primary_name", project_key),
+                    "aliases": project_data.get("aliases", []),
+                    "previous_names": project_data.get("previous_names", []),
+                    "name_patterns": project_data.get("name_patterns", []),
+                    "domain": project_data.get("domain", ""),
+                    "primary_scm_platform": project_data.get("primary_scm_platform", ""),
+                    "primary_scm_url": project_data.get("primary_scm_url", ""),
+                    "github_mirror_org": project_data.get("github_mirror_org", "")
+                }
+
+                # Map primary_scm_url to the appropriate field for server extraction
+                primary_scm_url = project_data.get("primary_scm_url", "")
+                if primary_scm_url:
+                    if "gerrit" in primary_scm_url.lower():
+                        project["gerrit_url"] = primary_scm_url
+                    elif "github" in primary_scm_url.lower():
+                        project["github_url"] = primary_scm_url
+                    else:
+                        # Default to gerrit for unknown SCM URLs
+                        project["gerrit_url"] = primary_scm_url
+
+                # Infer additional URLs based on domain and known patterns
+                domain = project_data.get("domain", "")
+                if domain:
+                    # Jenkins URLs
+                    jenkins_candidates = [
+                        f"https://jenkins.{domain}",
+                        f"https://build.{domain}",  # Used by some projects like OPNFV/AGL
+                    ]
+                    project["jenkins_production"] = jenkins_candidates[0]
+
+                    # Nexus URLs
+                    project["nexus3_url"] = f"https://nexus3.{domain}"
+
+                    # Sonar URLs
+                    project["sonar_url"] = f"https://sonar.{domain}"
+
+                    # Logs URLs
+                    project["logs_url"] = f"https://logs.{domain}"
+
+                projects.append(project)
+
+            # Enhance projects with GitHub discovery if possible
+            try:
+                self._enhance_projects_with_github_discovery(projects)
+            except Exception as e:
+                logger.warning(f"GitHub discovery enhancement failed, continuing without it: {e}")
+
+            # Extract servers from projects
+            servers = self._extract_servers_from_projects(projects)
+
+            # Save to files
+            self._save_projects(projects)
+            self._save_servers(servers)
+
+            logger.info(f"Rebuilt projects database from built-in data with {len(projects)} projects")
+            return {
+                "projects_count": len(projects),
+                "servers_count": len(servers)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to rebuild projects database from built-in data: {e}")
+            raise
+
+    def _rebuild_servers_from_builtin_data(self) -> Dict[str, int]:
+        """Rebuild servers database using built-in project data.
+
+        Returns:
+            Dictionary with rebuild statistics including VPN integration status
+        """
+        try:
+            logger.info("Rebuilding servers database from built-in project data")
+
+            # First, ensure we have projects data to extract servers from
+            if not self.projects_file.exists():
+                # Build projects first using built-in data
+                logger.info("Projects database missing, building it first...")
+                self._rebuild_from_builtin_data()
+
+            # Load projects and extract servers
+            projects = self.list_projects()
+            servers = self._extract_servers_from_projects(projects)
+
+            # Enhance servers with Tailscale VPN data
+            vpn_integration_status = {"vpn_success": False, "vpn_servers_found": 0, "vpn_errors": []}
+
+            logger.info("Enhancing servers with Tailscale VPN data...")
+            try:
+                self._enhance_servers_with_tailscale_data(servers)
+
+                # Count servers with VPN addresses
+                vpn_servers_count = len([s for s in servers if s.get("vpn_address")])
+                vpn_integration_status["vpn_success"] = True
+                vpn_integration_status["vpn_servers_found"] = vpn_servers_count
+
+                logger.info(f"VPN integration successful: {vpn_servers_count}/{len(servers)} servers have VPN addresses")
+            except Exception as e:
+                error_msg = f"VPN integration failed: {e}"
+                vpn_integration_status["vpn_errors"].append(error_msg)
+                logger.warning(error_msg)
+
+            # Save servers to file
+            self._save_servers(servers)
+
+            result = {
+                "servers_count": len(servers),
+                "projects_count": len(projects),
+                "vpn_success": vpn_integration_status["vpn_success"],
+                "vpn_servers_found": vpn_integration_status["vpn_servers_found"],
+                "vpn_errors": vpn_integration_status["vpn_errors"]
+            }
+
+            logger.info(f"Rebuilt servers database from built-in data with {len(servers)} servers")
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to rebuild servers database from built-in data: {e}")
+            raise
+
     def rebuild_servers_database(
         self,
         source_url: Optional[str] = None,
@@ -305,17 +605,9 @@ class ProjectManager:
 
         # Default source URLs for LF servers
         if not source_url:
-            # Try to find local resources file relative to the package
-            # Go up from src/lftools_ng/core/projects.py to the project root
-            package_root = pathlib.Path(__file__).parent.parent.parent.parent
-            local_servers_file = package_root / "resources" / "servers.yaml"
-            if local_servers_file.exists():
-                source_url = f"file://{local_servers_file}"
-            else:
-                raise FileNotFoundError(
-                    f"Servers resource file not found at {local_servers_file}. "
-                    "Please ensure the resources directory is present, or specify a source URL."
-                )
+            # Use built-in project data to extract servers
+            logger.info("No source URL provided, rebuilding servers from built-in project data")
+            return self._rebuild_servers_from_builtin_data()
 
         try:
             # Fetch server configuration
@@ -362,6 +654,76 @@ class ProjectManager:
 
         except Exception as e:
             logger.error(f"Failed to rebuild servers database: {e}")
+            raise
+
+    def rebuild_repositories_database(
+        self,
+        source_url: Optional[str] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """Rebuild repositories database from SSH discovery.
+
+        Args:
+            source_url: URL to fetch repository configuration from (unused for SSH)
+            force: Force rebuild even if database exists
+
+        Returns:
+            Dictionary with rebuild statistics
+        """
+        if self.repositories_file.exists() and not force:
+            raise ValueError(
+                "Repositories database already exists. Use --force to rebuild."
+            )
+
+        try:
+            # Import SSH repository discovery
+            from lftools_ng.core.repository_discovery import RepositoryDiscovery
+
+            logger.info("Discovering repositories from SSH connections...")
+            discovery = RepositoryDiscovery()
+
+            # Get all projects to discover repositories for
+            if not self.projects_file.exists():
+                logger.info("Projects database missing, building it first...")
+                self._rebuild_from_builtin_data()
+
+            projects = self.list_projects()
+            all_repositories = []
+
+            # Discover repositories for each project
+            for project in projects:
+                try:
+                    project_repos = discovery.discover_project_repositories(project)
+                    all_repositories.extend(project_repos)
+                except Exception as e:
+                    logger.warning(f"Failed to discover repositories for project {project.get('name', 'unknown')}: {e}")
+                    continue
+
+            # Save repositories to file
+            repositories_data = {
+                "repositories": all_repositories,
+                "metadata": {
+                    "updated": self._current_timestamp(),
+                    "total": len(all_repositories),
+                    "active": len([r for r in all_repositories if not r.get("archived", False)]),
+                    "archived": len([r for r in all_repositories if r.get("archived", False)])
+                }
+            }
+            self._save_yaml_with_header(repositories_data, self.repositories_file)
+
+            logger.info(f"Rebuilt repositories database with {len(all_repositories)} repositories")
+
+            return {
+                "repositories_count": len(all_repositories),
+                "active_count": repositories_data["metadata"]["active"],
+                "archived_count": repositories_data["metadata"]["archived"]
+            }
+
+        except ImportError:
+            logger.error("Repository discovery module not available")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to rebuild repositories database: {e}")
             raise
 
     def _fetch_config_file(self, source_url: str) -> str:
@@ -1097,7 +1459,6 @@ class ProjectManager:
 
                 # Handle jenkins-2 secondary instances - typically sandbox instances
                 if 'jenkins-2' in server_name or server_name.endswith('-2'):
-                    # For most projects, -2 instances are sandbox instances
                     return f"{base_url}/sandbox"
 
                 # Return the base URL for primary instances
@@ -1608,42 +1969,6 @@ class ProjectManager:
                 "domains": ["jenkins.onap.org/sandbox"]
             },
             {
-                "patterns": ["ecomp-gerrit", "onap-gerrit"],
-                "domains": ["gerrit.onap.org"]
-            },
-            {
-                "patterns": ["ecomp-nexus", "onap-nexus"],
-                "domains": ["nexus3.onap.org"]
-            },
-
-            # OpenDaylight patterns
-            {
-                "patterns": ["odl-jenkins-1", "odl-jenkins-prod"],
-                "domains": ["jenkins.opendaylight.org"]
-            },
-            {
-                "patterns": ["odl-jenkins-2", "odl-jenkins-sandbox"],
-                "domains": ["jenkins.opendaylight.org/sandbox"]
-            },
-            {
-                "patterns": ["odl-gerrit"],
-                "domains": ["git.opendaylight.org"]
-            },
-            {
-                "patterns": ["odl-nexus"],
-                "domains": ["nexus3.opendaylight.org"]
-            },
-
-            # O-RAN-SC patterns
-            {
-                "patterns": ["oran-jenkins-prod", "oran-jenkins-1"],
-                "domains": ["jenkins.o-ran-sc.org"]
-            },
-            {
-                "patterns": ["oran-jenkins-sandbox", "oran-jenkins-2"],
-                "domains": ["jenkins.o-ran-sc.org/sandbox"]
-            },
-            {
                 "patterns": ["oran-gerrit"],
                 "domains": ["gerrit.o-ran-sc.org"]
             },
@@ -1846,39 +2171,9 @@ class ProjectManager:
             (r".*ecomp.*jenkins.*(sandbox|2).*", "jenkins.onap.org/sandbox"),
             (r".*ecomp.*jenkins.*(prod|1).*", "jenkins.onap.org"),
 
-            # OpenDaylight mappings - more specific patterns first
-            (r".*odl.*gerrit.*", "git.opendaylight.org"),
-            (r".*odl.*nexus.*", "nexus3.opendaylight.org"),
-            (r".*odl.*jenkins.*(sandbox|2).*", "jenkins.opendaylight.org/sandbox"),
-            (r".*odl.*jenkins.*(prod|1).*", "jenkins.opendaylight.org"),
-
-            # O-RAN-SC mappings (more specific patterns first)
-            (r".*oran.*gerrit.*", "gerrit.o-ran-sc.org"),
-            (r".*oran.*nexus.*", "nexus3.o-ran-sc.org"),
-            (r".*oran.*jenkins.*(sandbox|2).*", "jenkins.o-ran-sc.org/sandbox"),
-            (r".*oran.*jenkins.*(prod|1).*", "jenkins.o-ran-sc.org"),
-
-            # Akraino mappings - more specific patterns first
-            (r".*akraino.*gerrit.*", "gerrit.akraino.org"),
-            (r".*akraino.*nexus.*", "nexus3.akraino.org"),
-            (r".*akraino.*jenkins.*(sandbox|2).*", "jenkins.akraino.org/sandbox"),
-            (r".*akraino.*jenkins.*(prod|1).*", "jenkins.akraino.org"),
-
-            # FD.io mappings - more specific patterns first
-            (r".*fdio.*gerrit.*", "gerrit.fd.io"),
-            (r".*fdio.*nexus.*", "nexus.fd.io"),
-            (r".*fdio.*jenkins.*(sandbox|2).*", "jenkins.fd.io/sandbox"),
-            (r".*fdio.*jenkins.*(prod|1).*", "jenkins.fd.io"),
-
-            # OPNFV mappings - more specific patterns first
-            (r".*opnfv.*gerrit.*", "gerrit.opnfv.org"),
-            (r".*opnfv.*nexus.*", "nexus3.opnfv.org"),
-            (r".*opnfv.*jenkins.*(sandbox|2).*", "build.opnfv.org/sandbox"),
-            (r".*opnfv.*jenkins.*(prod|1).*", "build.opnfv.org"),
-
-            # EdgeX mappings - more specific patterns first
+            # EdgeX Foundry mappings
             (r".*edgex.*gerrit.*", "gerrit.edgexfoundry.org"),
-            (r".*edgex.*nexus.*", "nexus3.edgexfoundry.org"),
+            (r".*edgex.*nexus.*", "nexus.edgexfoundry.org"),
             (r".*edgex.*jenkins.*(sandbox|2).*", "jenkins.edgexfoundry.org/sandbox"),
             (r".*edgex.*jenkins.*(prod|1).*", "jenkins.edgexfoundry.org"),
 
