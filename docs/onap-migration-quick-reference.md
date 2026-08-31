@@ -38,6 +38,7 @@ lftools-ng migrate repository \
 ## Verification Checklist
 
 After migration, each 1Password item should have:
+
 - ✅ Repository name as title
 - ✅ Username from Jenkins
 - ✅ Password from Jenkins (concealed)

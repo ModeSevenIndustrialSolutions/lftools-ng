@@ -24,7 +24,7 @@ Filters use a simple syntax: `field operator value`
 ### Supported Operators
 
 | Operator | Alias | Description | Example |
-|----------|-------|-------------|---------|
+| ---------- | ------- | ------------- | --------- |
 | `=` | `eq` | Equals (exact match) | `type=jenkins` |
 | `!=` | `ne` | Not equals | `name!=test` |
 | `~=` | `contains` | Contains substring | `name~=linux` |
