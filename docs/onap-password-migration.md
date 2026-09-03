@@ -21,7 +21,9 @@ The migration will transfer repository-specific credentials used for publishing 
 ## Authentication Setup
 
 ### Jenkins Authentication
+
 Set environment variables for Jenkins access:
+
 ```bash
 export JENKINS_SERVER="https://jenkins.onap.org"  # Replace with actual ONAP Jenkins URL
 export JENKINS_USER="your-jenkins-username"
@@ -29,7 +31,9 @@ export JENKINS_PASSWORD="your-jenkins-api-token"
 ```
 
 ### 1Password Authentication
+
 Login to 1Password CLI:
+
 ```bash
 op account add --address lfnetworking.1password.com
 op signin
@@ -54,6 +58,7 @@ lftools-ng migrate repository \
 ```
 
 **Note**: You may need to adjust the `--filter-pattern` based on how the ONAP Jenkins credentials are named. Common patterns include:
+
 - `"deployment"` (default)
 - `"nexus deployment"`
 - `"artifact deployment"`
@@ -120,25 +125,31 @@ After migration, verify the credentials in 1Password:
 ### Common Issues
 
 **Jenkins Connection Failed**:
+
 - Verify the Jenkins server URL
 - Check username and password/API token
 - Ensure network connectivity
 
 **1Password Authentication Failed**:
+
 - Run `op signin` again
 - Verify account and vault names
 - Check CLI version with `op --version`
 
 **No Credentials Found**:
+
 - Try different filter patterns:
+
   ```bash
   --filter-pattern "nexus"
   --filter-pattern "artifact"
   --filter-pattern "publish"
   ```
+
 - Use `--verbose` flag for detailed logging
 
 **Permission Denied**:
+
 - Ensure you have admin access to the Jenkins server
 - Verify 1Password vault permissions
 
